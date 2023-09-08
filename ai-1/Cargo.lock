@@ -122,6 +122,7 @@ dependencies = [
  "egui-plotter",
  "env_logger",
  "image",
+ "random-string",
  "rfd",
 ]
 
@@ -2329,6 +2330,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
+]
+
+[[package]]
+name = "random-string"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf4e63111ec5292d8af9c220f06fe3bb87991cc78b6f1f7e291d1ae6b8a60817"
+dependencies = [
+ "fastrand 1.9.0",
 ]
 
 [[package]]
