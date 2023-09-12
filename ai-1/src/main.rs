@@ -249,13 +249,45 @@ impl eframe::App for MyApp {
                                     if self.promise.is_none() {
                                         self.plot.clear_lines();
                                         // Достаем параметры из интерфейса
-                                        let min_temperature_str =
-                                            self.min_temperature_str.parse().unwrap();
-                                        let max_temperature_str =
-                                            self.max_temperature_str.parse().unwrap();
-                                        let queens_amount = self.queens_amount.parse().unwrap();
-                                        let temperature_alpha =
-                                            self.temperature_alpha.parse::<f64>().unwrap();
+                                        let min_temperature_str = match
+                                            self.min_temperature_str.parse() {
+                                                Ok(v) => v,
+                                                Err(_) => {
+                                                    self.min_temperature_str = "0".into();
+                                                    0f64
+                                                }
+                                            };
+                                        let max_temperature_str = match
+                                            self.max_temperature_str.parse() {
+                                                Ok(v) => v,
+                                                Err(_) => {
+                                                    self.max_temperature_str = "0".into();
+                                                    0f64
+                                                }
+                                            };
+                                        let queens_amount = match self.queens_amount.parse::<usize>() {
+                                            Ok(v) => v,
+                                            Err(_) => {
+                                                self.queens_amount = "0".into();
+                                                0usize
+                                            }
+                                        };
+                                        let temperature_alpha = match
+                                            self.temperature_alpha.parse::<f64>() {
+                                                Ok(v) => v,
+                                                Err(_) => {
+                                                    self.temperature_alpha = "0".into();
+                                                    0f64
+                                                }
+                                            };
+                                        let steps_n = match
+                                            self.steps_n.parse::<i64>() {
+                                                Ok(v) => v,
+                                                Err(_) => {
+                                                    self.steps_n = "0".into();
+                                                    0i64
+                                                }
+                                            };
 
                                         self.promise = Some(poll_promise::Promise::<(
                                             QueenState,
@@ -268,7 +300,7 @@ impl eframe::App for MyApp {
                                                     min_temperature_str,
                                                     max_temperature_str,
                                                     |x| x * temperature_alpha,
-                                                    queens_amount as i64,
+                                                    steps_n as i64,
                                                 )
                                             },
                                         ));
