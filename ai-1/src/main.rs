@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // Скрывает консоль на Windows
 
 mod simulated_annealing;
 
@@ -7,25 +7,27 @@ use egui::plot::{Legend, Line, Plot, PlotPoints};
 use rand::Rng;
 
 fn main() -> Result<(), eframe::Error> {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    env_logger::init(); // Лог в stderr (`RUST_LOG=debug`).
 
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(350.0, 400.0)),
         ..Default::default()
     };
     eframe::run_native(
-        "My egui App with a plot",
+        "Simulated annealing",
         options,
         Box::new(|_cc| Box::<MyApp>::default()),
     )
 }
 
+// Состояние задачи о королевах
 #[derive(Debug, Clone)]
 pub struct QueenState {
     positions: Vec<usize>,
     n: usize,
 }
 
+// Реализация состояния задачи о королевах
 impl QueenState {
     fn new(n: usize) -> Self {
         Self {
@@ -35,7 +37,9 @@ impl QueenState {
     }
 }
 
+// Реализуем свойство State для нашего состояния задачи о королевах
 impl simulated_annealing::State for QueenState {
+    // Переставляем двух королев местами
     fn changed_state(&self) -> Self {
         let mut new_positions = self.positions.clone();
         let first_index = rand::thread_rng().gen_range(0..new_positions.len());
@@ -46,6 +50,7 @@ impl simulated_annealing::State for QueenState {
             n: self.n,
         }
     }
+    // Расчет энергии. Считаем только пересечения по диагонали
     fn energy(&self) -> f64 {
         let mut energy = 0.0f64;
         for i in 0..self.positions.len() {
@@ -57,91 +62,44 @@ impl simulated_annealing::State for QueenState {
         }
         energy
     }
+    // Такая генерация гарантирует отсутствие повторений в столбцах
     fn setup(&mut self) {
         self.positions = (0..self.n).collect();
     }
 }
 
-pub struct CustomPlot {
-    pub plot_id: String,
-    pub lines: Vec<CustomLine>,
-    pub width: f32,
-    pub height: f32,
-    pub title: String,
-}
-
-pub struct CustomLine {
-    pub data: Vec<[f64; 2]>,
-    pub name: String,
-}
-
-impl CustomLine {
-    fn new(data: Vec<[f64; 2]>, name: impl Into<String>) -> Self {
-        Self {
-            data: data,
-            name: name.into(),
-        }
-    }
-}
-
-impl CustomPlot {
-    fn new(plot_id: impl Into<String>, width: f32, height: f32, title: impl Into<String>) -> Self {
-        Self {
-            plot_id: plot_id.into(),
-            width: width,
-            height: height,
-            title: title.into(),
-            lines: Default::default(),
-        }
-    }
-    fn add_line(&mut self, data: Vec<[f64; 2]>, name: impl Into<String>) {
-        self.lines.push(CustomLine::new(data, name));
-    }
-    fn clear_lines(&mut self) {
-        self.lines.clear();
-    }
-}
-
-impl egui::Widget for &mut CustomPlot {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        ui.vertical(|ui| {
-            ui.label(self.title.clone());
-            let my_plot = Plot::new(self.plot_id.clone())
-                .clamp_grid(true)
-                .auto_bounds_x()
-                .auto_bounds_y()
-                .legend(Legend::default());
-
-            my_plot.show(ui, |plot_ui| {
-                for line in &self.lines {
-                    plot_ui.line(
-                        Line::new(PlotPoints::from(line.data.clone())).name(line.name.clone()),
-                    );
-                }
-            })
-        })
-        .response
-    }
-}
-
 struct MyApp {
+    // Макс температура
     max_temperature_str: String,
+    // Мин температура
     min_temperature_str: String,
+    // Коэф. температуры
     temperature_alpha: String,
+    // Кол-во королев
     queens_amount: String,
+    // Шагов без изменения температуры
     steps_n: String,
+    // График
     plot: CustomPlot,
+    // Картинка белой клетки
     chess_white: egui_extras::RetainedImage,
+    // Картинка черной клетки
     chess_black: egui_extras::RetainedImage,
+    // Картинка белой клетки с королевой
     chess_queen_white: egui_extras::RetainedImage,
+    // Картинка черной клетки с королевой клетки
     chess_queen_black: egui_extras::RetainedImage,
+    // Конечное состояние решения
     state: QueenState,
+    // Информация о решении
     solution: simulated_annealing::SolutionInfo<QueenState>,
+    // Promise функции решения
     promise:
         Option<poll_promise::Promise<(QueenState, simulated_annealing::SolutionInfo<QueenState>)>>,
 }
 
 impl MyApp {
+    // Показ шахматной доски
     fn show_chess_board(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::ScrollArea::new([true, true])
             .min_scrolled_height(400.0)
@@ -184,6 +142,7 @@ impl MyApp {
                     });
             });
     }
+    // Добавление линий на график
     fn add_lines(&mut self) {
         self.plot.add_line(
             self.solution
@@ -259,8 +218,9 @@ impl eframe::App for MyApp {
             let border_y = 18.0;
 
             ui.heading("Simulated annealing");
-            // add some whitespace in y direction
+
             ui.add_space(border_y);
+
             egui::ScrollArea::new([true, true])
                 .auto_shrink([true, true])
                 .show(ui, |ui| {
@@ -285,7 +245,7 @@ impl eframe::App for MyApp {
                                 if ui.button("Посчитать").clicked() {
                                     if self.promise.is_none() {
                                         self.plot.clear_lines();
-                                        // Calculate parameters
+                                        // Достаем параметры из интерфейса
                                         let min_temperature_str =
                                             self.min_temperature_str.parse().unwrap();
                                         let max_temperature_str =
@@ -334,5 +294,69 @@ impl eframe::App for MyApp {
                     });
                 });
         });
+    }
+}
+
+// Кастомный график
+pub struct CustomPlot {
+    pub plot_id: String,
+    pub lines: Vec<CustomLine>,
+    pub width: f32,
+    pub height: f32,
+    pub title: String,
+}
+
+// Кастомная линия
+pub struct CustomLine {
+    pub data: Vec<[f64; 2]>,
+    pub name: String,
+}
+
+impl CustomLine {
+    fn new(data: Vec<[f64; 2]>, name: impl Into<String>) -> Self {
+        Self {
+            data: data,
+            name: name.into(),
+        }
+    }
+}
+
+impl CustomPlot {
+    fn new(plot_id: impl Into<String>, width: f32, height: f32, title: impl Into<String>) -> Self {
+        Self {
+            plot_id: plot_id.into(),
+            width: width,
+            height: height,
+            title: title.into(),
+            lines: Default::default(),
+        }
+    }
+    fn add_line(&mut self, data: Vec<[f64; 2]>, name: impl Into<String>) {
+        self.lines.push(CustomLine::new(data, name));
+    }
+    fn clear_lines(&mut self) {
+        self.lines.clear();
+    }
+}
+
+impl egui::Widget for &mut CustomPlot {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        ui.vertical(|ui| {
+            ui.label(self.title.clone());
+            let my_plot = Plot::new(self.plot_id.clone())
+                .clamp_grid(true)
+                .auto_bounds_x()
+                .auto_bounds_y()
+                .legend(Legend::default());
+
+            my_plot.show(ui, |plot_ui| {
+                for line in &self.lines {
+                    plot_ui.line(
+                        Line::new(PlotPoints::from(line.data.clone())).name(line.name.clone()),
+                    );
+                }
+            })
+        })
+        .response
     }
 }
