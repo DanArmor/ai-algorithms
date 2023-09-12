@@ -4,7 +4,7 @@ pub trait State {
     fn changed_state(&self) -> Self;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SolutionStepInfo<T: State + Clone> {
     pub index: usize,
     pub temperature: f64,
@@ -14,7 +14,7 @@ pub struct SolutionStepInfo<T: State + Clone> {
     pub final_state: T,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SolutionInfo<T: State + Clone> {
     pub min_temperature: f64,
     pub max_temperature: f64,
@@ -43,7 +43,7 @@ pub fn sim_ang<T: State + Clone>(
         let mut bad_decisions = 0i64;
         let mut good_decisions = 0i64;
 
-        for i in 0..n_steps {
+        for _ in 0..n_steps {
             let new_state = state.changed_state();
             let delta_energy = new_state.energy() - state.energy();
             if delta_energy > 0.0 {

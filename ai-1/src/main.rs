@@ -137,6 +137,79 @@ struct MyApp {
     chess_queen_black: egui_extras::RetainedImage,
     state: QueenState,
     solution: simulated_annealing::SolutionInfo<QueenState>,
+    promise:
+        Option<poll_promise::Promise<(QueenState, simulated_annealing::SolutionInfo<QueenState>)>>,
+}
+
+impl MyApp {
+    fn show_chess_board(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        egui::ScrollArea::new([true, true])
+            .min_scrolled_height(400.0)
+            .auto_shrink([true, true])
+            .show(ui, |ui| {
+                egui::Grid::new("grid_chess")
+                    .min_row_height(32.0)
+                    .min_col_width(32.0)
+                    .show(ui, |ui| {
+                        for i in 0..self.state.n {
+                            for j in 0..self.state.n {
+                                if i % 2 == j % 2 {
+                                    if self.state.positions[i] == j {
+                                        ui.add(egui::Image::new(
+                                            self.chess_queen_white.texture_id(ctx),
+                                            self.chess_queen_white.size_vec2(),
+                                        ));
+                                    } else {
+                                        ui.add(egui::Image::new(
+                                            self.chess_white.texture_id(ctx),
+                                            self.chess_white.size_vec2(),
+                                        ));
+                                    }
+                                } else {
+                                    if self.state.positions[i] == j {
+                                        ui.add(egui::Image::new(
+                                            self.chess_queen_black.texture_id(ctx),
+                                            self.chess_queen_black.size_vec2(),
+                                        ));
+                                    } else {
+                                        ui.add(egui::Image::new(
+                                            self.chess_black.texture_id(ctx),
+                                            self.chess_black.size_vec2(),
+                                        ));
+                                    }
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
+    }
+    fn add_lines(&mut self) {
+        self.plot.add_line(
+            self.solution
+                .steps
+                .iter()
+                .map(|x| [x.index as f64, x.temperature])
+                .collect(),
+            "Температура",
+        );
+        self.plot.add_line(
+            self.solution
+                .steps
+                .iter()
+                .map(|x| [x.index as f64, x.bad_decisions as f64])
+                .collect(),
+            "Количество принятых плохих решений",
+        );
+        self.plot.add_line(
+            self.solution
+                .steps
+                .iter()
+                .map(|x| [x.index as f64, x.final_energy])
+                .collect(),
+            "Энергия лучшего решения",
+        );
+    }
 }
 
 impl Default for MyApp {
@@ -175,12 +248,13 @@ impl Default for MyApp {
                 n_steps: 0,
                 steps: vec![],
             },
+            promise: Option::None,
         }
     }
 }
 
 impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let border_y = 18.0;
 
@@ -209,85 +283,54 @@ impl eframe::App for MyApp {
                                 ui.text_edit_singleline(&mut self.steps_n);
 
                                 if ui.button("Посчитать").clicked() {
-                                    (self.state, self.solution) = simulated_annealing::sim_ang(
-                                        QueenState::new(self.queens_amount.parse().unwrap()),
-                                        self.min_temperature_str.parse().unwrap(),
-                                        self.max_temperature_str.parse().unwrap(),
-                                        |x| x * self.temperature_alpha.parse::<f64>().unwrap(),
-                                        self.queens_amount.parse().unwrap(),
-                                    );
-                                    self.plot.clear_lines();
-                                    self.plot.add_line(
-                                        self.solution
-                                            .steps
-                                            .iter()
-                                            .map(|x| [x.index as f64, x.temperature])
-                                            .collect(),
-                                        "Температура",
-                                    );
-                                    self.plot.add_line(
-                                        self.solution
-                                            .steps
-                                            .iter()
-                                            .map(|x| [x.index as f64, x.bad_decisions as f64])
-                                            .collect(),
-                                        "Количество принятых плохих решений",
-                                    );
-                                    self.plot.add_line(
-                                        self.solution
-                                            .steps
-                                            .iter()
-                                            .map(|x| [x.index as f64, x.final_energy])
-                                            .collect(),
-                                        "Энергия лучшего решения",
-                                    );
-                                    // simulated_annealing::sim_ang(init_state, min_temperature, max_temperature, dec_temp, n_steps)
+                                    if self.promise.is_none() {
+                                        self.plot.clear_lines();
+                                        // Calculate parameters
+                                        let min_temperature_str =
+                                            self.min_temperature_str.parse().unwrap();
+                                        let max_temperature_str =
+                                            self.max_temperature_str.parse().unwrap();
+                                        let queens_amount = self.queens_amount.parse().unwrap();
+                                        let temperature_alpha =
+                                            self.temperature_alpha.parse::<f64>().unwrap();
+
+                                        self.promise = Some(poll_promise::Promise::<(
+                                            QueenState,
+                                            simulated_annealing::SolutionInfo<QueenState>,
+                                        )>::spawn_thread(
+                                            "Simulated annealing calculation",
+                                            move || {
+                                                simulated_annealing::sim_ang(
+                                                    QueenState::new(queens_amount),
+                                                    min_temperature_str,
+                                                    max_temperature_str,
+                                                    |x| x * temperature_alpha,
+                                                    queens_amount as i64,
+                                                )
+                                            },
+                                        ));
+                                    }
                                 }
                             });
 
                             ui.add(&mut self.plot);
                         });
                         ui.label("Шахматная доска");
-                        egui::ScrollArea::new([true, true])
-                            .min_scrolled_height(400.0)
-                            .auto_shrink([true, true])
-                            .show(ui, |ui| {
-                                egui::Grid::new("grid_chess")
-                                    .min_row_height(32.0)
-                                    .min_col_width(32.0)
-                                    .show(ui, |ui| {
-                                        for i in 0..self.state.n {
-                                            for j in 0..self.state.n {
-                                                if i % 2 == j % 2 {
-                                                    if self.state.positions[i] == j {
-                                                        ui.add(egui::Image::new(
-                                                            self.chess_queen_white.texture_id(ctx),
-                                                            self.chess_queen_white.size_vec2(),
-                                                        ));
-                                                    } else {
-                                                        ui.add(egui::Image::new(
-                                                            self.chess_white.texture_id(ctx),
-                                                            self.chess_white.size_vec2(),
-                                                        ));
-                                                    }
-                                                } else {
-                                                    if self.state.positions[i] == j {
-                                                        ui.add(egui::Image::new(
-                                                            self.chess_queen_black.texture_id(ctx),
-                                                            self.chess_queen_black.size_vec2(),
-                                                        ));
-                                                    } else {
-                                                        ui.add(egui::Image::new(
-                                                            self.chess_black.texture_id(ctx),
-                                                            self.chess_black.size_vec2(),
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                            ui.end_row();
-                                        }
-                                    });
-                            });
+                        match &self.promise {
+                            Some(p) => {
+                                if let Some(value) = p.ready() {
+                                    self.state = value.0.clone();
+                                    self.solution = value.1.clone();
+                                    self.add_lines();
+                                    self.promise = Option::None;
+                                } else {
+                                    ui.spinner();
+                                }
+                            }
+                            None => {
+                                self.show_chess_board(ui, ctx);
+                            }
+                        };
                     });
                 });
         });
