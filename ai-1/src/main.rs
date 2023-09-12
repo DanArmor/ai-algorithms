@@ -104,10 +104,12 @@ impl MyApp {
         egui::ScrollArea::new([true, true])
             .min_scrolled_height(400.0)
             .auto_shrink([true, true])
+            .drag_to_scroll(true)
             .show(ui, |ui| {
                 egui::Grid::new("grid_chess")
                     .min_row_height(32.0)
                     .min_col_width(32.0)
+                    .spacing([0.0, 0.0])
                     .show(ui, |ui| {
                         for i in 0..self.state.n {
                             for j in 0..self.state.n {
@@ -275,7 +277,8 @@ impl eframe::App for MyApp {
 
                             ui.add(&mut self.plot);
                         });
-                        ui.label("Шахматная доска");
+                        ui.heading("Шахматная доска");
+
                         match &self.promise {
                             Some(p) => {
                                 if let Some(value) = p.ready() {
