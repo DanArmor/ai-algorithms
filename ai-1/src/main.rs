@@ -57,6 +57,7 @@ impl simulated_annealing::State for QueenState {
             for j in i + 1..self.positions.len() {
                 if i.abs_diff(j) == self.positions[i].abs_diff(self.positions[j]) {
                     energy += 1.0f64;
+                    break;
                 }
             }
         }
@@ -348,6 +349,7 @@ impl egui::Widget for &mut CustomPlot {
             ui.label(self.title.clone());
             let my_plot = Plot::new(self.plot_id.clone())
                 .clamp_grid(true)
+                .include_y(0.0)
                 .auto_bounds_x()
                 .auto_bounds_y()
                 .legend(Legend::default());
