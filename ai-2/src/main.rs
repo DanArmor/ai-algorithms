@@ -47,14 +47,14 @@ impl eframe::App for MyApp {
             egui::ScrollArea::new([true, true])
                 .auto_shrink([true, true])
                 .show(ui, |ui| {
-                    ui.horizontal(|ui|{
+                    ui.horizontal(|ui| {
                         ui.vertical(|ui| {
                             ui.label("Количество векторов-прототипов");
                             ui.text_edit_singleline(&mut self.amount_clasters);
-    
+
                             ui.label("Параметр внимательности");
                             ui.text_edit_singleline(&mut self.p);
-    
+
                             ui.label("Бета параметр");
                             ui.text_edit_singleline(&mut self.b);
                         });

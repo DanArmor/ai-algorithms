@@ -52,9 +52,7 @@ pub fn art1(data: &Vec<bit_vec::BitVec>, amount_clasters: &usize, p: &f64, b: &f
     clasters.push(Claster::new());
     clasters[0].add(data, &0);
     while true {
-        for v in data {
-            
-        }
+        for v in data {}
     }
     1
 }
