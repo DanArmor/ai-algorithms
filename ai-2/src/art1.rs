@@ -149,9 +149,7 @@ pub fn art1(
     while changed && max_iters > 0 {
         max_iters -= 1;
         changed = false;
-        println!("{:?}", clasters);
         for entity in &mut entities {
-            println!("{:?}", entity);
             changed = clasters.dispatch_entity(data, entity);
             if entity.claster_id == "-" {
                 let mut claster = Claster::new();
