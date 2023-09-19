@@ -147,6 +147,7 @@ impl eframe::App for MyApp {
                             if ui.button("Сгенерировать новые данные").clicked()
                             {
                                 self.colors_map = None;
+                                self.clasters = None;
                                 self.dropped.clear();
                                 let amount_of_data = match self.amount_of_data.parse() {
                                     Ok(v) => v,
@@ -224,15 +225,44 @@ impl eframe::App for MyApp {
                                                     }
                                                 }
                                             }
-                                            None => {
-                                                for v in &self.data {
-                                                    ui.label(
-                                                        egui::RichText::new(format!("{:?}", v))
-                                                            .font(egui::FontId::proportional(20.0)),
-                                                    );
-                                                    ui.end_row();
+                                            None => match self.clasters.as_ref() {
+                                                Some(clasters) => {
+                                                    for claster in self.clasters.as_ref().unwrap() {
+                                                        ui.label(
+                                                            egui::RichText::new(format!(
+                                                                "Прототип: {:?}",
+                                                                claster.v
+                                                            ))
+                                                            .font(egui::FontId::proportional(25.0))
+                                                            .strong(),
+                                                        );
+                                                        ui.end_row();
+                                                        for index in &claster.indexes {
+                                                            ui.label(
+                                                                egui::RichText::new(format!(
+                                                                    "{:?}",
+                                                                    self.data[*index]
+                                                                ))
+                                                                .font(egui::FontId::proportional(
+                                                                    20.0,
+                                                                )),
+                                                            );
+                                                            ui.end_row();
+                                                        }
+                                                    }
                                                 }
-                                            }
+                                                None => {
+                                                    for v in &self.data {
+                                                        ui.label(
+                                                            egui::RichText::new(format!("{:?}", v))
+                                                                .font(egui::FontId::proportional(
+                                                                    20.0,
+                                                                )),
+                                                        );
+                                                        ui.end_row();
+                                                    }
+                                                }
+                                            },
                                         }
                                         if self.dropped.len() != 0 {
                                             ui.label(
