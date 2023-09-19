@@ -30,7 +30,7 @@ impl Claster {
         self.v.clear();
         match self.indexes.first() {
             Some(i) => self.v = data[*i].clone(),
-            None => ()
+            None => (),
         }
         for i in &self.indexes {
             self.v.and(&data[*i]);
@@ -94,7 +94,9 @@ impl ClastersManager {
     }
     fn find_claster(&mut self, entity: &mut ClasterEntity) -> Option<usize> {
         for i in 0..self.clasters.len() {
-            if entity.claster_id != self.clasters[i].id && similar(&self.clasters[i].v, &entity.v, self.b) {
+            if entity.claster_id != self.clasters[i].id
+                && similar(&self.clasters[i].v, &entity.v, self.b)
+            {
                 if pass(&self.clasters[i].v, &entity.v, self.p) {
                     return Some(i);
                 }
@@ -108,8 +110,8 @@ impl ClastersManager {
                 self.remove_from_claster(data, entity);
                 self.clasters[index].add(entity);
                 true
-            },
-            None => false
+            }
+            None => false,
         }
     }
     fn recalculate(&mut self) {
@@ -126,7 +128,7 @@ pub fn art1(
     amount_clasters: &usize,
     p: &f64,
     b: &f64,
-) -> Vec<Claster> {
+) -> (Vec<Claster>, Vec<usize>) {
     let mut entities: Vec<_> = data
         .iter()
         .enumerate()
@@ -151,7 +153,7 @@ pub fn art1(
         changed = false;
         for entity in &mut entities {
             changed = clasters.dispatch_entity(data, entity);
-            if entity.claster_id == "-" {
+            if &clasters.clasters.len() < amount_clasters && entity.claster_id == "-" {
                 let mut claster = Claster::new();
                 claster.add(entity);
                 clasters.add_claster(claster);
@@ -160,5 +162,12 @@ pub fn art1(
             clasters.recalculate();
         }
     }
-    clasters.clasters
+    (
+        clasters.clasters,
+        entities
+            .into_iter()
+            .filter(|x| x.claster_id == "-")
+            .map(|x| x.data_index)
+            .collect(),
+    )
 }

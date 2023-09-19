@@ -35,6 +35,8 @@ struct MyApp {
     colors: Vec<egui::Color32>,
     // Color map
     colors_map: Option<std::collections::HashMap<String, egui::Color32>>,
+    // Dropped
+    dropped: Vec<usize>,
 }
 
 impl Default for MyApp {
@@ -67,6 +69,7 @@ impl Default for MyApp {
                 egui::Color32::from_rgb(255, 248, 220),
             ],
             colors_map: None,
+            dropped: vec![],
         }
     }
 }
@@ -113,7 +116,10 @@ impl eframe::App for MyApp {
                                         0usize
                                     }
                                 };
-                                self.clasters = Some(art1::art1(&self.data, &amount_clasters, &p, &b));
+                                let (clasters, dropped) =
+                                    art1::art1(&self.data, &amount_clasters, &p, &b);
+                                self.clasters = Some(clasters);
+                                self.dropped = dropped;
                                 if self.clasters.as_ref().unwrap().len() > self.colors.len() {
                                     self.colors_map = None;
                                 } else {
@@ -183,6 +189,21 @@ impl eframe::App for MyApp {
                                             );
                                             ui.end_row();
                                         }
+                                    }
+                                }
+                                if self.dropped.len() != 0 {
+                                    ui.label(
+                                        egui::RichText::new("Не вошедшие в кластеры")
+                                            .font(egui::FontId::proportional(25.0))
+                                            .strong(),
+                                    );
+                                    ui.end_row();
+                                    for v in &self.dropped {
+                                        ui.label(
+                                            egui::RichText::new(format!("{:?}", self.data[*v]))
+                                                .font(egui::FontId::proportional(20.0)),
+                                        );
+                                        ui.end_row();
                                     }
                                 }
                             });
