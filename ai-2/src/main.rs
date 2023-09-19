@@ -37,6 +37,10 @@ struct MyApp {
     colors_map: Option<std::collections::HashMap<String, egui::Color32>>,
     // Dropped
     dropped: Vec<usize>,
+    // features
+    features: String,
+    // amount_of_data
+    amount_of_data: String,
 }
 
 impl Default for MyApp {
@@ -70,6 +74,8 @@ impl Default for MyApp {
             ],
             colors_map: None,
             dropped: vec![],
+            amount_of_data: "10".into(),
+            features: "8".into(),
         }
     }
 }
@@ -99,21 +105,21 @@ impl eframe::App for MyApp {
                                     Ok(v) => v,
                                     Err(_) => {
                                         self.p = "0.1".into();
-                                        0f64
+                                        0.1f64
                                     }
                                 };
                                 let b = match self.b.parse() {
                                     Ok(v) => v,
                                     Err(_) => {
                                         self.b = "1.0".into();
-                                        0f64
+                                        1.0f64
                                     }
                                 };
                                 let amount_clasters = match self.amount_clasters.parse() {
                                     Ok(v) => v,
                                     Err(_) => {
                                         self.amount_clasters = "5".into();
-                                        0usize
+                                        5usize
                                     }
                                 };
                                 let (clasters, dropped) =
@@ -132,56 +138,51 @@ impl eframe::App for MyApp {
                                     }
                                 }
                             }
-                        });
-                        egui::Grid::new("start_grid")
-                            .min_row_height(12.0)
-                            .min_col_width(12.0)
-                            .spacing([6.0, 0.0])
-                            .show(ui, |ui| {
-                                ui.label("Изначальные векторы-признаки");
-                                ui.end_row();
-                                for v in &self.data {
-                                    ui.label(
-                                        egui::RichText::new(format!("{:?}", v))
-                                            .font(egui::FontId::proportional(20.0)),
-                                    );
-                                    ui.end_row();
-                                }
-                            });
-                        egui::Grid::new("start_grid")
-                            .min_row_height(12.0)
-                            .min_col_width(12.0)
-                            .spacing([6.0, 0.0])
-                            .show(ui, |ui| {
-                                ui.label("Конечные векторы-признаки");
-                                ui.end_row();
-                                match self.colors_map.as_ref() {
-                                    Some(color_map) => {
-                                        for claster in self.clasters.as_ref().unwrap() {
-                                            ui.label(
-                                                egui::RichText::new(format!(
-                                                    "Прототип: {:?}",
-                                                    claster.v
-                                                ))
-                                                .font(egui::FontId::proportional(25.0))
-                                                .color(color_map[&claster.id])
-                                                .strong(),
-                                            );
-                                            ui.end_row();
-                                            for index in &claster.indexes {
-                                                ui.label(
-                                                    egui::RichText::new(format!(
-                                                        "{:?}",
-                                                        self.data[*index]
-                                                    ))
-                                                    .font(egui::FontId::proportional(20.0))
-                                                    .color(color_map[&claster.id]),
-                                                );
-                                                ui.end_row();
-                                            }
+                            ui.label("Количество фитч");
+                            ui.text_edit_singleline(&mut self.features);
+
+                            ui.label("Количество элементов");
+                            ui.text_edit_singleline(&mut self.amount_of_data);
+
+                            if ui.button("Сгенерировать новые данные").clicked()
+                            {
+                                self.colors_map = None;
+                                self.dropped.clear();
+                                let amount_of_data = match self.amount_of_data.parse() {
+                                    Ok(v) => v,
+                                    Err(_) => {
+                                        self.amount_of_data = "10".into();
+                                        10usize
+                                    }
+                                };
+                                let features = match self.features.parse() {
+                                    Ok(v) => v,
+                                    Err(_) => {
+                                        self.features = "8".into();
+                                        8usize
+                                    }
+                                };
+                                self.data.clear();
+                                for i in 0..amount_of_data {
+                                    self.data.push(bit_vec::BitVec::from_elem(features, false));
+                                    for j in 0..features {
+                                        if rand::random::<bool>() {
+                                            self.data[i].set(j, true);
                                         }
                                     }
-                                    None => {
+                                }
+                            }
+                        });
+                        egui::ScrollArea::new([true, true])
+                            .auto_shrink([true, true])
+                            .show(ui, |ui| {
+                                egui::Grid::new("start_grid")
+                                    .min_row_height(12.0)
+                                    .min_col_width(12.0)
+                                    .spacing([6.0, 0.0])
+                                    .show(ui, |ui| {
+                                        ui.label("Изначальные векторы-признаки");
+                                        ui.end_row();
                                         for v in &self.data {
                                             ui.label(
                                                 egui::RichText::new(format!("{:?}", v))
@@ -189,23 +190,69 @@ impl eframe::App for MyApp {
                                             );
                                             ui.end_row();
                                         }
-                                    }
-                                }
-                                if self.dropped.len() != 0 {
-                                    ui.label(
-                                        egui::RichText::new("Не вошедшие в кластеры")
-                                            .font(egui::FontId::proportional(25.0))
-                                            .strong(),
-                                    );
-                                    ui.end_row();
-                                    for v in &self.dropped {
-                                        ui.label(
-                                            egui::RichText::new(format!("{:?}", self.data[*v]))
-                                                .font(egui::FontId::proportional(20.0)),
-                                        );
+                                    });
+                                egui::Grid::new("start_grid")
+                                    .min_row_height(12.0)
+                                    .min_col_width(12.0)
+                                    .spacing([6.0, 0.0])
+                                    .show(ui, |ui| {
+                                        ui.label("Конечные векторы-признаки");
                                         ui.end_row();
-                                    }
-                                }
+                                        match self.colors_map.as_ref() {
+                                            Some(color_map) => {
+                                                for claster in self.clasters.as_ref().unwrap() {
+                                                    ui.label(
+                                                        egui::RichText::new(format!(
+                                                            "Прототип: {:?}",
+                                                            claster.v
+                                                        ))
+                                                        .font(egui::FontId::proportional(25.0))
+                                                        .color(color_map[&claster.id])
+                                                        .strong(),
+                                                    );
+                                                    ui.end_row();
+                                                    for index in &claster.indexes {
+                                                        ui.label(
+                                                            egui::RichText::new(format!(
+                                                                "{:?}",
+                                                                self.data[*index]
+                                                            ))
+                                                            .font(egui::FontId::proportional(20.0))
+                                                            .color(color_map[&claster.id]),
+                                                        );
+                                                        ui.end_row();
+                                                    }
+                                                }
+                                            }
+                                            None => {
+                                                for v in &self.data {
+                                                    ui.label(
+                                                        egui::RichText::new(format!("{:?}", v))
+                                                            .font(egui::FontId::proportional(20.0)),
+                                                    );
+                                                    ui.end_row();
+                                                }
+                                            }
+                                        }
+                                        if self.dropped.len() != 0 {
+                                            ui.label(
+                                                egui::RichText::new("Не вошедшие в кластеры")
+                                                    .font(egui::FontId::proportional(25.0))
+                                                    .strong(),
+                                            );
+                                            ui.end_row();
+                                            for v in &self.dropped {
+                                                ui.label(
+                                                    egui::RichText::new(format!(
+                                                        "{:?}",
+                                                        self.data[*v]
+                                                    ))
+                                                    .font(egui::FontId::proportional(20.0)),
+                                                );
+                                                ui.end_row();
+                                            }
+                                        }
+                                    });
                             });
                     });
                 });
