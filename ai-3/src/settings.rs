@@ -1,28 +1,3 @@
-pub struct SettingsGraph {
-    pub count_node: usize,
-    pub count_edge: usize,
-}
-
-impl Default for SettingsGraph {
-    fn default() -> Self {
-        Self {
-            count_node: 300,
-            count_edge: 500,
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct SettingsInteraction {
-    pub dragging_enabled: bool,
-    pub clicking_enabled: bool,
-    pub folding_enabled: bool,
-    pub selection_enabled: bool,
-    pub selection_multi_enabled: bool,
-    pub selection_depth: i32,
-    pub folding_depth: usize,
-}
-
 pub struct SettingsNavigation {
     pub fit_to_screen_enabled: bool,
     pub zoom_and_pan_enabled: bool,
@@ -50,8 +25,8 @@ pub struct SettingsStyle {
 impl Default for SettingsStyle {
     fn default() -> Self {
         Self {
-            edge_radius_weight: 1.,
-            folded_node_radius_weight: 2.,
+            edge_radius_weight: 0.,
+            folded_node_radius_weight: 0.0,
             labels_always: false,
         }
     }

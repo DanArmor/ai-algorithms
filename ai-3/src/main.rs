@@ -1,342 +1,53 @@
-use std::collections::HashSet;
-use std::time::Instant;
-
-use crossbeam::channel::{unbounded, Receiver, Sender};
 use eframe::{run_native, App, CreationContext};
-use egui::plot::{Line, Plot, PlotPoints};
-use egui::{CollapsingHeader, Color32, Context, ScrollArea, Slider, Ui, Vec2, Visuals};
-use egui_graphs::{to_graph, Change, ChangeSubgraph, Edge, Graph, GraphView, Node};
-use fdg_sim::glam::Vec3;
-use fdg_sim::{ForceGraph, ForceGraphHelper, Simulation, SimulationParameters};
-use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableUnGraph};
-use petgraph::visit::EdgeRef;
+use egui::{CollapsingHeader, Color32, Context, ScrollArea, Slider, Ui, Vec2};
+use egui_graphs::{Edge, Graph, GraphView, Node};
+use petgraph::{
+    stable_graph::{NodeIndex, StableGraph, StableUnGraph},
+    visit::EdgeRef,
+    Undirected,
+};
 use rand::Rng;
-use settings::{SettingsGraph, SettingsInteraction, SettingsNavigation, SettingsStyle};
 
 mod settings;
-mod ant_algo;
 
-const SIMULATION_DT: f32 = 0.035;
-const FPS_LINE_COLOR: Color32 = Color32::from_rgb(128, 128, 128);
-const CHANGES_LIMIT: usize = 100;
-const EDGE_COLOR: Color32 = Color32::from_rgba_premultiplied(128, 128, 128, 64);
-
-pub struct ConfigurableApp {
-    g: Graph<(), (), petgraph::Undirected>,
-    sim: Simulation<(), f32>,
-
-    settings_graph: SettingsGraph,
-    settings_interaction: SettingsInteraction,
-    settings_navigation: SettingsNavigation,
-    settings_style: SettingsStyle,
-
-    min_for_select: bool,
-    max_for_select: bool,
-    max_for_fold: bool,
-
-    selected_nodes: Vec<Node<()>>,
-    selected_edges: Vec<Edge<()>>,
-    last_changes: Vec<Change>,
-
-    simulation_stopped: bool,
-    dark_mode: bool,
-
-    fps: f64,
-    fps_history: Vec<f64>,
-    last_update_time: Instant,
-    frames_last_time_span: usize,
-
-    changes_receiver: Receiver<Change>,
-    changes_sender: Sender<Change>,
-
-    folded_edges: HashSet<EdgeIndex>,
+pub struct AntOptions {
+    alpha: f64,
+    nodes: i64,
 }
 
-impl ConfigurableApp {
+impl Default for AntOptions {
+    fn default() -> Self {
+        AntOptions {
+            alpha: 0.5,
+            nodes: 3,
+        }
+    }
+}
+
+pub struct AntApp {
+    g: Graph<(), (), Undirected>,
+    ant_options: AntOptions,
+    settings_style: settings::SettingsStyle,
+    settings_navigation: settings::SettingsNavigation,
+}
+
+impl AntApp {
     fn new(_: &CreationContext<'_>) -> Self {
-        let settings_graph = SettingsGraph::default();
-        let (g, sim) = generate(&settings_graph);
-        let (changes_sender, changes_receiver) = unbounded();
+        let g = generate_graph();
         Self {
-            g,
-            sim,
-
-            changes_receiver,
-            changes_sender,
-
-            settings_graph,
-
-            settings_interaction: Default::default(),
-            settings_navigation: Default::default(),
-            settings_style: Default::default(),
-
-            min_for_select: Default::default(),
-            max_for_select: Default::default(),
-            max_for_fold: Default::default(),
-
-            selected_nodes: Default::default(),
-            selected_edges: Default::default(),
-            last_changes: Default::default(),
-            folded_edges: Default::default(),
-
-            simulation_stopped: false,
-            dark_mode: true,
-
-            fps: 0.,
-            fps_history: Default::default(),
-            last_update_time: Instant::now(),
-            frames_last_time_span: 0,
+            g: Graph::from(&g),
+            ant_options: AntOptions::default(),
+            settings_style: settings::SettingsStyle::default(),
+            settings_navigation: settings::SettingsNavigation::default()
         }
     }
+}
 
-    fn update_simulation(&mut self) {
-        if self.simulation_stopped {
-            return;
-        }
-
-        // the following manipulations is a hack to avoid having looped edges in the simulation
-        // because they cause the simulation to blow up;
-        // this is the issue of the fdg_sim engine we use for the simulation
-        // https://github.com/grantshandy/fdg/issues/10
-        // * remove loop edges
-        // * update simulation
-        // * restore loop edges
-
-        // remove looped edges
-        let looped_nodes = {
-            let graph = self.sim.get_graph_mut();
-            let mut looped_nodes = vec![];
-            let mut looped_edges = vec![];
-            graph.edge_indices().for_each(|idx| {
-                let edge = graph.edge_endpoints(idx).unwrap();
-                let looped = edge.0 == edge.1;
-                if looped {
-                    looped_nodes.push((edge.0, ()));
-                    looped_edges.push(idx);
-                }
-            });
-
-            for idx in looped_edges {
-                graph.remove_edge(idx);
-            }
-
-            self.sim.update(SIMULATION_DT);
-
-            looped_nodes
-        };
-
-        // restore looped edges
-        let graph = self.sim.get_graph_mut();
-        for (idx, _) in looped_nodes.iter() {
-            graph.add_edge(*idx, *idx, 1.);
-        }
-    }
-
-    /// Syncs the graph with the simulation.
-    ///
-    /// Changes location of nodes in `g` according to the locations in `sim`. If node from `g` is dragged its location is prioritized
-    /// over the location of the corresponding node from `sim` and this location is set to the node from the `sim`.
-    ///
-    /// If node or edge is selected it is added to the corresponding selected field in `self`.
-    fn sync_graph_with_simulation(&mut self) {
-        self.selected_nodes = vec![];
-
-        let g_indices = self.g.g.node_indices().collect::<Vec<_>>();
-        g_indices.iter().for_each(|g_n_idx| {
-            let g_n = self.g.g.node_weight_mut(*g_n_idx).unwrap();
-            let sim_n = self.sim.get_graph_mut().node_weight_mut(*g_n_idx).unwrap();
-
-            if g_n.dragged() {
-                let loc = g_n.location();
-                sim_n.location = Vec3::new(loc.x, loc.y, 0.);
-                return;
-            }
-
-            let loc = sim_n.location;
-            g_n.set_location(Vec2::new(loc.x, loc.y));
-
-            if g_n.selected() {
-                self.selected_nodes.push(g_n.clone());
-            }
-        });
-
-        // reset the weights of the edges
-        self.sim.get_graph_mut().edge_weights_mut().for_each(|w| {
-            *w = 1.;
-        });
-        // update the weights of the edges that are folded
-        self.g.g.edge_indices().for_each(|idx| {
-            if let Some(f_e_idx) = self.folded_edges.get(&idx) {
-                *self.sim.get_graph_mut().edge_weight_mut(*f_e_idx).unwrap() = 0.
-            }
-        });
-    }
-
-    fn update_fps(&mut self) {
-        self.frames_last_time_span += 1;
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.last_update_time);
-        if elapsed.as_secs() >= 1 {
-            self.last_update_time = now;
-            self.fps = self.frames_last_time_span as f64 / elapsed.as_secs_f64();
-            self.frames_last_time_span = 0;
-
-            self.fps_history.push(self.fps);
-            if self.fps_history.len() > 100 {
-                self.fps_history.remove(0);
-            }
-        }
-    }
-
-    fn reset_graph(&mut self, ui: &mut Ui) {
-        let settings_graph = SettingsGraph::default();
-        let (g, sim) = generate(&settings_graph);
-
-        self.g = g;
-        self.sim = sim;
-        self.settings_graph = settings_graph;
-        self.last_changes = Default::default();
-
-        GraphView::<(), (), petgraph::Undirected>::reset_metadata(ui);
-    }
-
-    fn handle_changes(&mut self) {
-        let mut new_folded_edges = HashSet::new();
-        self.changes_receiver.try_iter().for_each(|ch| {
-            if self.last_changes.len() > CHANGES_LIMIT {
-                self.last_changes.remove(0);
-            }
-
-            if let Change::SubGraph(ChangeSubgraph::Folded { root: _, subg }) = ch.clone() {
-                subg.edge_references().for_each(|e| {
-                    new_folded_edges = new_folded_edges
-                        .union(
-                            &[self
-                                .sim
-                                .get_graph()
-                                .find_edge(
-                                    *subg.node_weight(e.source()).unwrap(),
-                                    *subg.node_weight(e.target()).unwrap(),
-                                )
-                                .unwrap()]
-                            .into_iter()
-                            .collect::<HashSet<_>>(),
-                        )
-                        .cloned()
-                        .collect();
-                });
-            };
-
-            self.last_changes.push(ch);
-        });
-
-        self.folded_edges = new_folded_edges;
-    }
-
-    fn random_node_idx(&self) -> Option<NodeIndex> {
-        let nodes_cnt = self.g.g.node_count();
-        if nodes_cnt == 0 {
-            return None;
-        }
-
-        let random_n_idx = rand::thread_rng().gen_range(0..nodes_cnt);
-        self.g.g.node_indices().nth(random_n_idx)
-    }
-
-    fn random_edge_idx(&self) -> Option<EdgeIndex> {
-        let edges_cnt = self.g.g.edge_count();
-        if edges_cnt == 0 {
-            return None;
-        }
-
-        let random_e_idx = rand::thread_rng().gen_range(0..edges_cnt);
-        self.g.g.edge_indices().nth(random_e_idx)
-    }
-
-    fn remove_random_node(&mut self) {
-        let idx = self.random_node_idx().unwrap();
-        self.remove_node(idx);
-    }
-
-    fn add_random_node(&mut self) {
-        let random_n_idx = self.random_node_idx();
-        if random_n_idx.is_none() {
-            return;
-        }
-
-        let random_n = self.g.g.node_weight(random_n_idx.unwrap()).unwrap();
-
-        // location of new node is in surrounging of random existing node
-        let mut rng = rand::thread_rng();
-        let location = Vec2::new(
-            random_n.location().x + 10. + rng.gen_range(0. ..50.),
-            random_n.location().y + 10. + rng.gen_range(0. ..50.),
-        );
-
-        let idx = self.g.g.add_node(Node::new(location, ()));
-        let n = self.g.g.node_weight_mut(idx).unwrap();
-        *n = n.with_label(format!("{:?}", idx));
-        let mut sim_node = fdg_sim::Node::new(idx.index().to_string().as_str(), ());
-        sim_node.location = Vec3::new(location.x, location.y, 0.);
-        self.sim.get_graph_mut().add_node(sim_node);
-    }
-
-    fn remove_node(&mut self, idx: NodeIndex) {
-        // before removing nodes we need to remove all edges connected to it
-        let neighbors = self.g.g.neighbors_undirected(idx).collect::<Vec<_>>();
-        neighbors.iter().for_each(|n| {
-            self.remove_edges(idx, *n);
-            self.remove_edges(*n, idx);
-        });
-
-        self.g.g.remove_node(idx).unwrap();
-        self.sim.get_graph_mut().remove_node(idx).unwrap();
-
-        // update edges count
-        self.settings_graph.count_edge = self.g.g.edge_count();
-    }
-
-    fn add_random_edge(&mut self) {
-        let random_start = self.random_node_idx().unwrap();
-        let random_end = self.random_node_idx().unwrap();
-
-        self.add_edge(random_start, random_end);
-    }
-
-    fn add_edge(&mut self, start: NodeIndex, end: NodeIndex) {
-        self.g.g.add_edge(start, end, Edge::new(()));
-        self.sim.get_graph_mut().add_edge(start, end, 1.);
-    }
-
-    fn remove_random_edge(&mut self) {
-        let random_e_idx = self.random_edge_idx();
-        if random_e_idx.is_none() {
-            return;
-        }
-        let endpoints = self.g.g.edge_endpoints(random_e_idx.unwrap()).unwrap();
-
-        self.remove_edge(endpoints.0, endpoints.1);
-    }
-
-    /// Removes random edge. Can not remove edge by idx because
-    /// there can be multiple edges between two nodes in 2 graphs
-    /// and we can't be sure that they are indexed the same way.
-    fn remove_edge(&mut self, start: NodeIndex, end: NodeIndex) {
-        let g_idx = self.g.g.find_edge(start, end);
-        if g_idx.is_none() {
-            return;
-        }
-
-        self.g.g.remove_edge(g_idx.unwrap()).unwrap();
-
-        let sim_idx = self.sim.get_graph_mut().find_edge(start, end).unwrap();
-        self.sim.get_graph_mut().remove_edge(sim_idx).unwrap();
-    }
-
-    /// Removes all edges between two nodes
+impl AntApp {
     fn remove_edges(&mut self, start: NodeIndex, end: NodeIndex) {
         let g_idxs = self
-            .g.g
+            .g
+            .g
             .edges_connecting(start, end)
             .map(|e| e.id())
             .collect::<Vec<_>>();
@@ -347,392 +58,151 @@ impl ConfigurableApp {
         g_idxs.iter().for_each(|e| {
             self.g.g.remove_edge(*e).unwrap();
         });
-
-        let sim_idxs = self
-            .sim
-            .get_graph()
-            .edges_connecting(start, end)
-            .map(|e| e.id())
-            .collect::<Vec<_>>();
-
-        sim_idxs.iter().for_each(|e| {
-            self.sim.get_graph_mut().remove_edge(*e).unwrap();
-        });
     }
-
-    fn draw_section_client(&mut self, ui: &mut Ui) {
-        CollapsingHeader::new("Client")
-            .default_open(true)
-            .show(ui, |ui| {
-                ui.add_space(10.);
-
-                ui.label("Simulation");
-                ui.separator();
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(match self.simulation_stopped {
-                            true => "start",
-                            false => "stop",
-                        })
-                        .clicked()
-                    {
-                        self.simulation_stopped = !self.simulation_stopped;
-                    };
-                    if ui.button("reset").clicked() {
-                        self.reset_graph(ui);
-                    }
-                });
-
-                ui.add_space(10.);
-
-                self.draw_counts_sliders(ui);
-
-                ui.add_space(10.);
-
-                ui.label("Style");
-                ui.separator();
-
-                self.draw_dark_mode(ui);
-            });
-    }
-
-    fn draw_section_widget(&mut self, ui: &mut Ui) {
-        CollapsingHeader::new("Widget")
-        .default_open(true)
-        .show(ui, |ui| {
-            ui.add_space(10.);
-
-            ui.label("SettingsNavigation");
-            ui.separator();
-
-            if ui
-                .checkbox(&mut self.settings_navigation.fit_to_screen_enabled, "fit_to_screen")
-                .changed()
-                && self.settings_navigation.fit_to_screen_enabled
-            {
-                self.settings_navigation.zoom_and_pan_enabled = false
-            };
-            ui.label("Enable fit to screen to fit the graph to the screen on every frame.");
-
-            ui.add_space(5.);
-
-            ui.add_enabled_ui(!self.settings_navigation.fit_to_screen_enabled, |ui| {
-                ui.vertical(|ui| {
-                    ui.checkbox(&mut self.settings_navigation.zoom_and_pan_enabled, "zoom_and_pan");
-                    ui.label("Zoom with ctrl + mouse wheel, pan with mouse drag.");
-                }).response.on_disabled_hover_text("disable fit_to_screen to enable zoom_and_pan");
-            });
-
-            ui.add_space(10.);
-
-            ui.label("SettingsStyle");
-            ui.separator();
-
-            ui.add(Slider::new(&mut self.settings_style.edge_radius_weight, 0. ..=5.)
-            .text("edge_radius_weight"));
-            ui.label("For every edge connected to node its radius is getting bigger by this value.");
-
-            ui.add_space(5.);
-
-            ui.checkbox(&mut self.settings_style.labels_always, "labels_always");
-            ui.label("Wheter to show labels always or when interacted only.");
-
-            ui.add_space(10.);
-
-            ui.label("SettingsInteraction");
-            ui.separator();
-
-            ui.add_enabled_ui(!(self.settings_interaction.dragging_enabled || self.settings_interaction.selection_enabled || self.settings_interaction.selection_multi_enabled || self.settings_interaction.folding_enabled), |ui| {
-                ui.vertical(|ui| {
-                    ui.checkbox(&mut self.settings_interaction.clicking_enabled, "clicking_enabled");
-                    ui.label("Check click events in last changes");
-                }).response.on_disabled_hover_text("node click is enabled when any of the interaction is also enabled");
-            });
-
-            ui.add_space(5.);
-
-            if ui.checkbox(&mut self.settings_interaction.dragging_enabled, "dragging_enabled").clicked() && self.settings_interaction.dragging_enabled {
-                self.settings_interaction.clicking_enabled = true;
-            };
-            ui.label("To drag use LMB click + drag on a node.");
-
-            ui.add_space(5.);
-
-            ui.add_enabled_ui(!self.settings_interaction.selection_multi_enabled, |ui| {
-                ui.vertical(|ui| {
-                    if ui.checkbox(&mut self.settings_interaction.selection_enabled, "selection_enabled").clicked() && self.settings_interaction.selection_enabled {
-                        self.settings_interaction.clicking_enabled = true;
-                    };
-                    ui.label("Enable select to select nodes with LMB click. If node is selected clicking on it again will deselect it.");
-                }).response.on_disabled_hover_text("selection_multi_enabled enables select");
-            });
-
-            if ui.checkbox(&mut self.settings_interaction.selection_multi_enabled, "selection_multi_enabled").changed() && self.settings_interaction.selection_multi_enabled {
-                self.settings_interaction.clicking_enabled = true;
-                self.settings_interaction.selection_enabled = true;
+    fn connect_node(&mut self, node: NodeIndex) {
+        let indexes: Vec<_> = self.g.g.node_indices().collect();
+        indexes.into_iter().for_each(|x| {
+            if x != node {
+                self.g.g.add_edge(
+                    x,
+                    node,
+                    Edge::new(()).with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 32)),
+                );
             }
-            ui.label("Enable multiselect to select multiple nodes.");
-
-            ui.add_enabled_ui(self.settings_interaction.selection_enabled || self.settings_interaction.selection_multi_enabled, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add_enabled_ui(!self.min_for_select, |ui| {
-                        if ui.checkbox(&mut self.max_for_select, "all_children").clicked() {
-                            self.settings_interaction.selection_depth = i32::MAX;
-                        }; 
-                    });
-                    ui.add_enabled_ui(!self.max_for_select, |ui| {
-                        if ui.checkbox(&mut self.min_for_select, "all_parents").clicked() {
-                            self.settings_interaction.selection_depth = i32::MIN;
-                        };
-                    });
-                });
-            });
-            ui.add_enabled_ui((self.settings_interaction.selection_enabled || self.settings_interaction.selection_multi_enabled) && !(self.min_for_select || self.max_for_select), |ui| {
-                ui.add(Slider::new(&mut self.settings_interaction.selection_depth, -10..=10)
-                    .text("selection_depth"));
-                ui.label("How deep into the neighbours of selected nodes should the selection go.");
-            });
-
-            ui.add_space(5.);
-
-            if ui.checkbox(&mut self.settings_interaction.folding_enabled, "fold_enabled").clicked() && self.settings_interaction.folding_enabled {
-                self.settings_interaction.clicking_enabled = true;
-            };
-            ui.label("To fold use LMB double click on a node. Currenly supports only one node folded at a time.");
-
-            ui.add_enabled_ui(self.settings_interaction.folding_enabled, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.checkbox(&mut self.max_for_fold, "all children").clicked() {
-                        self.settings_interaction.folding_depth = usize::MAX;
-                    };
-                });
-            });
-            ui.add_enabled_ui(self.settings_interaction.folding_enabled && !self.max_for_fold, |ui| {
-                ui.add(Slider::new(&mut self.settings_interaction.folding_depth, 0..=10)
-                .text("folding_depth"));
-                ui.label("How deep to fold childrens of the selected for folding node.");
-            });
-
-            ui.add_space(5.);
-
-            ui.collapsing("selected", |ui| {
-                ScrollArea::vertical().max_height(200.).show(ui, |ui| {
-                    self.selected_nodes.iter().for_each(|node| {
-                        ui.label(format!("{:?}", node));
-                    });
-                    self.selected_edges.iter().for_each(|edge| {
-                        ui.label(format!("{:?}", edge));
-                    });
-                });
-            });
-
-            ui.collapsing("last changes", |ui| {
-                ScrollArea::vertical().max_height(200.).show(ui, |ui| {
-                    self.last_changes.iter().rev().for_each(|node| {
-                        ui.label(format!("{:?}", node));
-                    });
-                });
-            });
         });
     }
+    fn remove_node(&mut self, idx: NodeIndex) {
+        let neighbors = self.g.g.neighbors_undirected(idx).collect::<Vec<_>>();
+        neighbors.iter().for_each(|n| {
+            self.remove_edges(idx, *n);
+            self.remove_edges(*n, idx);
+        });
 
-    fn draw_section_debug(&mut self, ui: &mut Ui) {
-        CollapsingHeader::new("Debug")
-            .default_open(false)
-            .show(ui, |ui| {
-                ui.add_space(10.);
-
-                ui.vertical(|ui| {
-                    ui.label(format!("fps: {:.1}", self.fps));
-                    ui.add_space(10.);
-                    self.draw_fps(ui);
-                });
-            });
+        self.g.g.remove_node(idx).unwrap();
     }
-
-    fn draw_dark_mode(&mut self, ui: &mut Ui) {
-        if self.dark_mode {
-            ui.ctx().set_visuals(Visuals::dark())
-        } else {
-            ui.ctx().set_visuals(Visuals::light())
+    fn random_node_idx(&self) -> Option<NodeIndex> {
+        let nodes_cnt = self.g.g.node_count();
+        if nodes_cnt == 0 {
+            return None;
         }
 
-        if ui
-            .button({
-                match self.dark_mode {
-                    true => "🔆 light",
-                    false => "🌙 dark",
-                }
-            })
-            .clicked()
-        {
-            self.dark_mode = !self.dark_mode
-        };
+        let random_n_idx = rand::thread_rng().gen_range(0..nodes_cnt);
+        self.g.g.node_indices().nth(random_n_idx)
     }
-
-    fn draw_fps(&self, ui: &mut Ui) {
-        let points: PlotPoints = self
-            .fps_history
-            .iter()
-            .enumerate()
-            .map(|(i, val)| [i as f64, *val])
-            .collect();
-
-        let line = Line::new(points).color(FPS_LINE_COLOR);
-        Plot::new("my_plot")
-            .min_size(Vec2::new(100., 80.))
-            .show_x(false)
-            .show_y(false)
-            .show_background(false)
-            .show_axes([false, true])
-            .allow_boxed_zoom(false)
-            .allow_double_click_reset(false)
-            .allow_drag(false)
-            .allow_scroll(false)
-            .allow_zoom(false)
-            .show(ui, |plot_ui| plot_ui.line(line));
+    fn remove_random_node(&mut self) {
+        let idx = self.random_node_idx().unwrap();
+        self.remove_node(idx);
     }
+    fn add_random_node(&mut self) {
+        let random_n_idx = self.random_node_idx();
+        if random_n_idx.is_none() {
+            return;
+        }
 
-    fn draw_counts_sliders(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            let before = self.settings_graph.count_node as i32;
+        let random_n = self.g.g.node_weight(random_n_idx.unwrap()).unwrap();
+        // location of new node is in surrounging of random existing node
+        let mut rng = rand::thread_rng();
+        let x_sign = (rng.gen_range(0..1) * -2 + 1) as f32;
+        let y_sign = (rng.gen_range(0..1) * -2 + 1) as f32;
+        let location = Vec2::new(
+            random_n.location().x + 30. * x_sign + rng.gen_range(0. ..200.) * x_sign,
+            random_n.location().y + 30. * y_sign + rng.gen_range(0. ..200.) * y_sign,
+        );
 
-            ui.add(Slider::new(&mut self.settings_graph.count_node, 1..=2500).text("nodes"));
-
-            let delta = self.settings_graph.count_node as i32 - before;
-            (0..delta.abs()).for_each(|_| {
-                if delta > 0 {
-                    self.add_random_node();
-                    return;
-                };
+        let idx = self.g.g.add_node(Node::new(location, ()));
+        self.connect_node(idx);
+        let n = self.g.g.node_weight_mut(idx).unwrap();
+        *n = n.with_label(format!("{:?}", idx));
+    }
+    fn ant_options_sliders(&mut self, ui: &mut Ui) {
+        let nodes_before = self.ant_options.nodes;
+        ui.add(Slider::new(&mut self.ant_options.nodes, 3..=200).text("Nodes"));
+        let delta_nodes = self.ant_options.nodes - nodes_before;
+        (0..delta_nodes.abs()).for_each(|_| {
+            if delta_nodes > 0 {
+                self.add_random_node();
+            } else {
                 self.remove_random_node();
-            });
+            }
         });
 
-        ui.horizontal(|ui| {
-            let before = self.settings_graph.count_edge as i32;
-
-            ui.add(Slider::new(&mut self.settings_graph.count_edge, 0..=5000).text("edges"));
-
-            let delta = self.settings_graph.count_edge as i32 - before;
-            (0..delta.abs()).for_each(|_| {
-                if delta > 0 {
-                    self.add_random_edge();
-                    return;
-                };
-                self.remove_random_edge();
-            });
-        });
+        ui.add(Slider::new(&mut self.ant_options.alpha, 0. ..=1.).text("alpha"));
+    }
+    fn ui_settings(&mut self, ui: &mut Ui) {
+        if ui.checkbox(&mut self.settings_navigation.fit_to_screen_enabled, "Fit to screen")
+        .changed() {
+            self.settings_navigation.zoom_and_pan_enabled = !self.settings_navigation.zoom_and_pan_enabled;
+        }
     }
 }
 
-impl App for ConfigurableApp {
+impl App for AntApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         egui::SidePanel::right("right_panel")
             .min_width(250.)
             .show(ctx, |ui| {
                 ScrollArea::vertical().show(ui, |ui| {
-                    self.draw_section_client(ui);
+                    CollapsingHeader::new("ant_options")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            ui.add_space(10.0);
 
-                    ui.add_space(10.);
+                            ui.label("Ant algorithm");
+                            ui.separator();
 
-                    self.draw_section_widget(ui);
+                            self.ant_options_sliders(ui);
+                        });
+                    CollapsingHeader::new("Ui")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            ui.add_space(10.0);
 
-                    ui.add_space(10.);
+                            ui.label("Ui settings");
+                            ui.separator();
 
-                    self.draw_section_debug(ui);
+                            self.ui_settings(ui);
+                        });
                 });
             });
-
         egui::CentralPanel::default().show(ctx, |ui| {
-            let settings_interaction = &egui_graphs::SettingsInteraction::new()
-                .with_folding_depth(self.settings_interaction.folding_depth)
-                .with_folding_enabled(self.settings_interaction.folding_enabled)
-                .with_selection_enabled(self.settings_interaction.selection_enabled)
-                .with_selection_multi_enabled(self.settings_interaction.selection_multi_enabled)
-                .with_selection_depth(self.settings_interaction.selection_depth)
-                .with_dragging_enabled(self.settings_interaction.dragging_enabled)
-                .with_clicking_enabled(self.settings_interaction.clicking_enabled);
             let settings_navigation = &egui_graphs::SettingsNavigation::new()
-                .with_zoom_and_pan_enabled(self.settings_navigation.zoom_and_pan_enabled)
                 .with_fit_to_screen_enabled(self.settings_navigation.fit_to_screen_enabled)
+                .with_screen_padding(self.settings_navigation.screen_padding)
+                .with_zoom_and_pan_enabled(self.settings_navigation.zoom_and_pan_enabled)
                 .with_zoom_speed(self.settings_navigation.zoom_speed);
             let settings_style = &egui_graphs::SettingsStyle::new()
                 .with_labels_always(self.settings_style.labels_always)
                 .with_edge_radius_weight(self.settings_style.edge_radius_weight)
-                .with_folded_radius_weight(self.settings_style.edge_radius_weight)
-                .with_edge_color(EDGE_COLOR);
+                .with_folded_radius_weight(self.settings_style.folded_node_radius_weight);
             ui.add(
                 &mut GraphView::new(&mut self.g)
-                    .with_interactions(settings_interaction)
-                    .with_navigations(settings_navigation)
                     .with_styles(settings_style)
-                    .with_changes(&self.changes_sender),
+                    .with_navigations(settings_navigation),
             );
         });
-
-        self.handle_changes();
-        self.sync_graph_with_simulation();
-
-        self.update_simulation();
-        self.update_fps();
     }
 }
 
-fn generate(settings: &SettingsGraph) -> (Graph<(), (), petgraph::Undirected>, Simulation<(), f32>) {
-    let g = generate_random_graph(settings.count_node, settings.count_edge);
-    let sim = construct_simulation(&g);
+fn generate_graph() -> StableGraph<(), (), Undirected> {
+    let mut g = StableUnGraph::default();
 
-    (g, sim)
-}
+    let a = g.add_node(());
+    let b = g.add_node(());
+    let c = g.add_node(());
 
-fn construct_simulation(g: &Graph<(), (), petgraph::Undirected>) -> Simulation<(), f32> {
-    // create force graph
-    let mut force_graph = ForceGraph::with_capacity(g.g.node_count(), g.g.edge_count());
-    g.g.node_indices().for_each(|idx| {
-        let idx = idx.index();
-        force_graph.add_force_node(format!("{}", idx).as_str(), ());
-    });
-    g.g.edge_indices().for_each(|idx| {
-        let (source, target) = g.g.edge_endpoints(idx).unwrap();
-        force_graph.add_edge(source, target, 1.);
-    });
+    g.add_edge(a, b, ());
+    g.add_edge(b, c, ());
+    g.add_edge(c, a, ());
 
-    // initialize simulation
-    let mut params = SimulationParameters::default();
-    let force = fdg_sim::force::fruchterman_reingold_weighted(100., 0.5);
-    params.set_force(force);
-
-    Simulation::from_graph(force_graph, params)
-}
-
-fn generate_random_graph(node_count: usize, edge_count: usize) -> Graph<(), (), petgraph::Undirected> {
-    let mut rng = rand::thread_rng();
-    let mut graph = StableUnGraph::default();
-
-    // add nodes
-    for _ in 0..node_count {
-        graph.add_node(());
-    }
-
-    // add random edges
-    for _ in 0..edge_count {
-        let source = rng.gen_range(0..node_count);
-        let target = rng.gen_range(0..node_count);
-
-        graph.add_edge(NodeIndex::new(source), NodeIndex::new(target), ());
-    }
-
-    to_graph(&graph)
+    g
 }
 
 fn main() {
     let native_options = eframe::NativeOptions::default();
     run_native(
-        "egui_graphs_configurable_demo",
+        "Ant-algo",
         native_options,
-        Box::new(|cc| Box::new(ConfigurableApp::new(cc))),
+        Box::new(|cc| Box::new(AntApp::new(cc))),
     )
     .unwrap();
 }
