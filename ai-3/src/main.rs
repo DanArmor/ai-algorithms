@@ -8,11 +8,17 @@ use petgraph::{
 };
 use rand::Rng;
 
+mod ant_algo;
 mod settings;
 
 pub struct AntOptions {
     alpha: f64,
     nodes: i64,
+}
+
+#[derive(Debug, Clone)]
+struct EdgeData {
+    distance: f32,
 }
 
 impl Default for AntOptions {
@@ -25,25 +31,30 @@ impl Default for AntOptions {
 }
 
 pub struct AntApp {
-    g: Graph<(), (), Undirected>,
+    g: Graph<(), EdgeData, Undirected>,
     ant_options: AntOptions,
     settings_style: settings::SettingsStyle,
     settings_navigation: settings::SettingsNavigation,
 }
 
-impl AntApp {
-    fn new(_: &CreationContext<'_>) -> Self {
-        let g = generate_graph();
-        Self {
-            g: Graph::from(&g),
-            ant_options: AntOptions::default(),
-            settings_style: settings::SettingsStyle::default(),
-            settings_navigation: settings::SettingsNavigation::default()
-        }
-    }
+fn distance(a: Vec2, b: Vec2) -> f32 {
+    ((a.x - b.x).powi(2) - (a.y - b.y).powi(2)).sqrt()
 }
 
 impl AntApp {
+    fn new(_: &CreationContext<'_>) -> Self {
+        let mut app = Self {
+            g: Graph::from(&StableUnGraph::default()),
+            ant_options: AntOptions::default(),
+            settings_style: settings::SettingsStyle::default(),
+            settings_navigation: settings::SettingsNavigation::default(),
+        };
+        for i in 0..app.ant_options.nodes {
+            app.add_random_node();
+        }
+        app
+    }
+
     fn remove_edges(&mut self, start: NodeIndex, end: NodeIndex) {
         let g_idxs = self
             .g
@@ -63,10 +74,17 @@ impl AntApp {
         let indexes: Vec<_> = self.g.g.node_indices().collect();
         indexes.into_iter().for_each(|x| {
             if x != node {
+                let edge_data = EdgeData {
+                    distance: distance(
+                        self.g.node(x).unwrap().location(),
+                        self.g.node(node).unwrap().location(),
+                    ),
+                };
                 self.g.g.add_edge(
                     x,
                     node,
-                    Edge::new(()).with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 32)),
+                    Edge::new(edge_data)
+                        .with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 32)),
                 );
             }
         });
@@ -96,6 +114,7 @@ impl AntApp {
     fn add_random_node(&mut self) {
         let random_n_idx = self.random_node_idx();
         if random_n_idx.is_none() {
+            self.g.g.add_node(Node::<()>::default());
             return;
         }
 
@@ -111,8 +130,6 @@ impl AntApp {
 
         let idx = self.g.g.add_node(Node::new(location, ()));
         self.connect_node(idx);
-        let n = self.g.g.node_weight_mut(idx).unwrap();
-        *n = n.with_label(format!("{:?}", idx));
     }
     fn ant_options_sliders(&mut self, ui: &mut Ui) {
         let nodes_before = self.ant_options.nodes;
@@ -129,9 +146,15 @@ impl AntApp {
         ui.add(Slider::new(&mut self.ant_options.alpha, 0. ..=1.).text("alpha"));
     }
     fn ui_settings(&mut self, ui: &mut Ui) {
-        if ui.checkbox(&mut self.settings_navigation.fit_to_screen_enabled, "Fit to screen")
-        .changed() {
-            self.settings_navigation.zoom_and_pan_enabled = !self.settings_navigation.zoom_and_pan_enabled;
+        if ui
+            .checkbox(
+                &mut self.settings_navigation.fit_to_screen_enabled,
+                "Fit to screen",
+            )
+            .changed()
+        {
+            self.settings_navigation.zoom_and_pan_enabled =
+                !self.settings_navigation.zoom_and_pan_enabled;
         }
     }
 }
@@ -181,20 +204,6 @@ impl App for AntApp {
             );
         });
     }
-}
-
-fn generate_graph() -> StableGraph<(), (), Undirected> {
-    let mut g = StableUnGraph::default();
-
-    let a = g.add_node(());
-    let b = g.add_node(());
-    let c = g.add_node(());
-
-    g.add_edge(a, b, ());
-    g.add_edge(b, c, ());
-    g.add_edge(c, a, ());
-
-    g
 }
 
 fn main() {
