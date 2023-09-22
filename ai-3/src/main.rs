@@ -12,26 +12,23 @@ mod ant_algo;
 mod settings;
 
 pub struct AntOptions {
-    alpha: f64,
+    alpha: f32,
+    beta: f32,
     nodes: i64,
-}
-
-#[derive(Debug, Clone)]
-struct EdgeData {
-    distance: f32,
 }
 
 impl Default for AntOptions {
     fn default() -> Self {
         AntOptions {
             alpha: 0.5,
+            beta: 0.5,
             nodes: 3,
         }
     }
 }
 
 pub struct AntApp {
-    g: Graph<(), EdgeData, Undirected>,
+    g: Graph<(), ant_algo::EdgeInfo, Undirected>,
     ant_options: AntOptions,
     settings_style: settings::SettingsStyle,
     settings_navigation: settings::SettingsNavigation,
@@ -74,12 +71,15 @@ impl AntApp {
         let indexes: Vec<_> = self.g.g.node_indices().collect();
         indexes.into_iter().for_each(|x| {
             if x != node {
-                let edge_data = EdgeData {
+                let mut edge_data = ant_algo::EdgeInfo {
                     distance: distance(
                         self.g.node(x).unwrap().location(),
                         self.g.node(node).unwrap().location(),
                     ),
+                    pheromones: 0.0,
+                    probability_parameters: 0.0,
                 };
+                edge_data.recalculate(self.ant_options.alpha, self.ant_options.beta);
                 self.g.g.add_edge(
                     x,
                     node,
