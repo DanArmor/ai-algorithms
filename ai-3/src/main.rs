@@ -14,6 +14,7 @@ mod settings;
 pub struct AntOptions {
     alpha: f32,
     beta: f32,
+    q: f32,
     nodes: i64,
 }
 
@@ -22,6 +23,7 @@ impl Default for AntOptions {
         AntOptions {
             alpha: 0.5,
             beta: 0.5,
+            q: 64.0,
             nodes: 3,
         }
     }
@@ -93,7 +95,6 @@ impl AntApp {
         let neighbors = self.g.g.neighbors_undirected(idx).collect::<Vec<_>>();
         neighbors.iter().for_each(|n| {
             self.remove_edges(idx, *n);
-            self.remove_edges(*n, idx);
         });
 
         self.g.g.remove_node(idx).unwrap();
@@ -144,6 +145,8 @@ impl AntApp {
         });
 
         ui.add(Slider::new(&mut self.ant_options.alpha, 0. ..=1.).text("alpha"));
+        ui.add(Slider::new(&mut self.ant_options.beta, 0. ..=1.).text("beta"));
+        ui.add(Slider::new(&mut self.ant_options.q, 0. ..=128.).text("Q"));
     }
     fn ui_settings(&mut self, ui: &mut Ui) {
         if ui
@@ -174,6 +177,10 @@ impl App for AntApp {
                             ui.separator();
 
                             self.ant_options_sliders(ui);
+
+                            if ui.button("Calculate").clicked() {
+                                ant_algo::ant_algo(&self.g, self.random_node_idx().unwrap());
+                            }
                         });
                     CollapsingHeader::new("Ui")
                         .default_open(true)

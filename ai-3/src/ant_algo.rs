@@ -7,6 +7,7 @@ use petgraph::{
     Undirected,
 };
 use weighted_rand::builder::NewBuilder;
+#[derive(Debug)]
 struct Ant {
     tabu: Vec<NodeIndex>,
     current_node: NodeIndex,
@@ -42,33 +43,52 @@ impl Ant {
     fn add_tabu_node(&mut self, node_index: NodeIndex) {
         self.tabu.push(node_index);
     }
+    fn get_edge_ant(&mut self, g: &Graph<(), EdgeInfo, petgraph::Undirected>) -> Vec<EdgeAnt> {
+        let mut edges =
+            g.g.edges_directed(self.current_node, petgraph::Outgoing)
+                .filter(|x|{
+                    !self.tabu.contains(&x.target())
+                })
+                .map(|x| EdgeAnt {
+                    edge_info: x.weight().data().unwrap().clone(),
+                    source: x.source(),
+                    target: x.target(),
+                    probability: 0.0,
+                })
+                .collect::<Vec<_>>();
+        let sum: f32 = edges
+            .iter()
+            .map(|x| x.edge_info.probability_parameters)
+            .sum();
+        edges
+            .iter_mut()
+            .for_each(|x| x.probability = x.edge_info.probability_parameters / sum);
+        edges
+    }
     fn travel_graph(&mut self, g: &Graph<(), EdgeInfo, petgraph::Undirected>) {
         let graph_size = g.g.node_count();
-        while self.tabu.len() != graph_size {
-            let mut edges =
-                g.g.edges_directed(self.current_node, petgraph::Outgoing)
-                    .map(|x| EdgeAnt {
-                        edge_info: x.weight().data().unwrap().clone(),
-                        source: x.source(),
-                        target: x.target(),
-                        probability: 0.0,
-                    })
-                    .collect::<Vec<_>>();
-            let sum: f32 = edges
-                .iter()
-                .map(|x| x.edge_info.probability_parameters)
-                .sum();
-            edges
-                .iter_mut()
-                .for_each(|x| x.probability = x.edge_info.probability_parameters / sum);
-            let indexes_weights = edges.iter().map(|x| x.probability).collect::<Vec<_>>();
+        while self.tabu.len() != graph_size-1 {
+            let edges = self.get_edge_ant(g);
+            let indexes_weights = edges.iter().map(|x| {
+                if x.probability.is_nan() {
+                    0.0
+                } else {
+                    x.probability
+                }
+            }).collect::<Vec<_>>();
+            print!("T: {:?}", indexes_weights);
             let wa_table =
                 weighted_rand::builder::WalkerTableBuilder::new(&indexes_weights).build();
             let next_node = edges[wa_table.next()].target;
-            self.tabu.push(self.current_node);
+            self.add_tabu_node(self.current_node.clone());
             self.current_node = next_node;
         }
+        self.add_tabu_node(self.current_node.clone());
     }
 }
 
-fn ant_algo(g: &Graph<(), (), petgraph::Undirected>, start_index: NodeIndex) {}
+pub fn ant_algo(g: &Graph<(), EdgeInfo, petgraph::Undirected>, start_index: NodeIndex) {
+    let mut ant = Ant::new(start_index);
+    ant.travel_graph(g);
+    print!("Data: {:?}", ant);
+}
