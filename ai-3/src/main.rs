@@ -1,3 +1,4 @@
+use ant_algo::IterationInfo;
 use eframe::{run_native, App, CreationContext};
 use egui::{CollapsingHeader, Color32, Context, ScrollArea, Slider, Ui, Vec2};
 use egui_graphs::{Edge, Graph, GraphView, Node};
@@ -35,11 +36,22 @@ impl Default for AntOptions {
     }
 }
 
+struct SolutionInfo {
+    solution: Vec<IterationInfo>,
+    best_iteration: usize,
+    best_ant: i64,
+    best_path_len: f32,
+}
+
 pub struct AntApp {
     g: Graph<(), ant_algo::EdgeInfo, Undirected>,
     ant_options: AntOptions,
     settings_style: settings::SettingsStyle,
     settings_navigation: settings::SettingsNavigation,
+    solution: Option<SolutionInfo>,
+    iteration_i: i64,
+    ant_i: i64,
+    edge_i: i64,
 }
 
 fn distance(a: Vec2, b: Vec2) -> f32 {
@@ -53,6 +65,10 @@ impl AntApp {
             ant_options: AntOptions::default(),
             settings_style: settings::SettingsStyle::default(),
             settings_navigation: settings::SettingsNavigation::default(),
+            solution: None,
+            iteration_i: 0,
+            ant_i: 0,
+            edge_i: 0,
         };
         for i in 0..app.ant_options.nodes {
             app.add_random_node();
@@ -92,7 +108,7 @@ impl AntApp {
                     x,
                     node,
                     Edge::new(edge_data)
-                        .with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 32)),
+                        .with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 0)),
                 );
             }
         });
@@ -142,6 +158,9 @@ impl AntApp {
         let nodes_before = self.ant_options.nodes;
         ui.add(Slider::new(&mut self.ant_options.nodes, 3..=200).text("Nodes"));
         let delta_nodes = self.ant_options.nodes - nodes_before;
+        if delta_nodes != 0 {
+            self.reset_graph();
+        }
         (0..delta_nodes.abs()).for_each(|_| {
             if delta_nodes > 0 {
                 self.add_random_node();
@@ -153,7 +172,7 @@ impl AntApp {
         ui.add(Slider::new(&mut self.ant_options.alpha, 0. ..=1.).text("alpha"));
         ui.add(Slider::new(&mut self.ant_options.beta, 0. ..=1.).text("beta"));
         ui.add(Slider::new(&mut self.ant_options.p, 0. ..=1.).text("p"));
-        ui.add(Slider::new(&mut self.ant_options.q, 1. ..=128.).text("Q"));
+        ui.add(Slider::new(&mut self.ant_options.q, 1. ..=10000.).text("Q"));
         ui.add(Slider::new(&mut self.ant_options.ant_amount, 1..=128).text("Ant amount"));
         ui.add(
             Slider::new(&mut self.ant_options.iterations_amount, 1..=128).text("Iterations amount"),
@@ -169,6 +188,62 @@ impl AntApp {
         {
             self.settings_navigation.zoom_and_pan_enabled =
                 !self.settings_navigation.zoom_and_pan_enabled;
+        }
+    }
+    fn reset_graph_color(&mut self) {
+        self.g.g.edge_weights_mut().for_each(|x| {
+            x.clone_from(
+                &Edge::new(x.data().unwrap().clone())
+                    .with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 0)),
+            );
+        });
+    }
+    fn reset_graph(&mut self) {
+        self.solution = None;
+        self.g.g.edge_weights_mut().for_each(|x| {
+            let mut new_edge_data = x.data().unwrap().clone();
+            new_edge_data.pheromones = 0.0;
+            new_edge_data.probability_parameters = 0.0;
+            x.clone_from(
+                &Edge::new(new_edge_data)
+                    .with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 0)),
+            );
+        });
+    }
+    fn update_graph(&mut self) {
+        match &self.solution {
+            Some(v) => {
+                let v = &v.solution;
+                let iteration = &v[self.iteration_i as usize];
+                let ant = &iteration.ants[self.ant_i as usize];
+                let edge = &ant.edges[self.edge_i as usize];
+
+                iteration
+                    .old_edges
+                    .iter()
+                    .zip(self.g.g.edge_weights_mut())
+                    .for_each(|(color_edge, x)| {
+                        x.clone_from(&x.clone().with_color(Color32::from_rgba_unmultiplied(
+                            0,
+                            ((0.0 as f32 + 255 as f32 * color_edge.pheromones) as u8).clamp(0, 255),
+                            0,
+                            ((0.0 as f32 + 255 as f32 * color_edge.pheromones) as u8).clamp(0, 255),
+                        )));
+                    });
+
+                for i in 0..=self.edge_i {
+                    let e = self
+                        .g
+                        .g
+                        .edge_weight_mut(ant.edges[i as usize].index)
+                        .unwrap();
+                    e.clone_from(
+                        &e.clone()
+                            .with_color(Color32::from_rgba_unmultiplied(0, 255, 255, 128)),
+                    );
+                }
+            }
+            None => (),
         }
     }
 }
@@ -190,15 +265,125 @@ impl App for AntApp {
                             self.ant_options_sliders(ui);
 
                             if ui.button("Calculate").clicked() {
-                                ant_algo::ant_algo(
+                                self.reset_graph();
+                                self.iteration_i = 0;
+                                self.ant_i = 0;
+                                self.edge_i = 0;
+                                let res = ant_algo::ant_algo(
                                     &mut self.g,
                                     self.ant_options.iterations_amount,
                                     self.ant_options.ant_amount,
                                     self.ant_options.alpha,
                                     self.ant_options.beta,
                                     self.ant_options.q,
-                                    self.ant_options.p
+                                    self.ant_options.p,
                                 );
+                                let best_iteration = res
+                                    .iter()
+                                    .min_by(|x, y| {
+                                        x.ants[x.best_ant_i as usize]
+                                            .edges
+                                            .iter()
+                                            .map(|x| x.edge_info.distance)
+                                            .sum::<f32>()
+                                            .total_cmp(
+                                                &y.ants[y.best_ant_i as usize]
+                                                    .edges
+                                                    .iter()
+                                                    .map(|x| x.edge_info.distance)
+                                                    .sum::<f32>(),
+                                            )
+                                    })
+                                    .unwrap()
+                                    .clone();
+                                let solution = SolutionInfo {
+                                    solution: res,
+                                    best_iteration: best_iteration.index,
+                                    best_ant: best_iteration.best_ant_i,
+                                    best_path_len: best_iteration.best_path_len,
+                                };
+                                self.solution = Some(solution);
+                                self.update_graph();
+                            }
+                            match &self.solution {
+                                Some(solution) => {
+                                    let v = &solution.solution;
+                                    let iteration_before = self.iteration_i;
+                                    ui.add(
+                                        Slider::new(
+                                            &mut self.iteration_i,
+                                            0..=(v.len() - 1) as i64,
+                                        )
+                                        .text("Iteration"),
+                                    );
+                                    let ant_before = self.ant_i;
+                                    ui.add(
+                                        Slider::new(
+                                            &mut self.ant_i,
+                                            0..=(v.first().unwrap().ants.len() - 1) as i64,
+                                        )
+                                        .text("Ant"),
+                                    );
+                                    let edge_before = self.edge_i;
+                                    ui.add(
+                                        Slider::new(
+                                            &mut self.edge_i,
+                                            0..=(v
+                                                .first()
+                                                .unwrap()
+                                                .ants
+                                                .first()
+                                                .unwrap()
+                                                .edges
+                                                .len()
+                                                - 1)
+                                                as i64,
+                                        )
+                                        .text("Edge"),
+                                    );
+                                    ui.label(format!(
+                                        "Best path: Iteration#{} Ant#{} / {}",
+                                        solution.best_iteration,
+                                        v[solution.best_iteration].best_ant_i,
+                                        v[solution.best_iteration].best_path_len
+                                    ));
+                                    ui.label(format!(
+                                        "Best path for iteration: Ant#{} / {}",
+                                        v[self.iteration_i as usize].best_ant_i,
+                                        v[self.iteration_i as usize].best_path_len
+                                    ));
+                                    ui.label(format!(
+                                        "Current Ant path: {}",
+                                        v[self.iteration_i as usize].ants[self.ant_i as usize]
+                                            .distance
+                                    ));
+
+                                    if ui.button("Show best path").clicked() {
+                                        self.iteration_i = solution.best_iteration as i64;
+                                        self.ant_i = solution.best_ant;
+                                        self.edge_i =
+                                            (v.first().unwrap().ants.first().unwrap().edges.len()
+                                                - 1)
+                                                as i64;
+                                        self.reset_graph_color();
+                                        self.update_graph();
+                                    } else {
+                                        if self.iteration_i != iteration_before
+                                            || self.ant_i != ant_before
+                                            || self.edge_i != edge_before
+                                        {
+                                            self.reset_graph_color();
+                                            if self.iteration_i - iteration_before != 0 {
+                                                self.ant_i = 0;
+                                                self.edge_i = 0;
+                                            } else if self.ant_i - ant_before != 0 {
+                                                self.edge_i = 0;
+                                            }
+                                            self.update_graph();
+                                        }
+                                    }
+                                }
+                                None => (),
                             }
                         });
                     CollapsingHeader::new("Ui")

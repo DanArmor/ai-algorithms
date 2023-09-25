@@ -8,11 +8,15 @@ use petgraph::{
 };
 use rand::Rng;
 use weighted_rand::builder::NewBuilder;
-#[derive(Debug)]
-struct Ant {
+
+#[derive(Debug, Clone)]
+pub struct Ant {
     tabu: Vec<NodeIndex>,
-    edges: Vec<EdgeAnt>,
+    pub edges: Vec<EdgeAnt>,
     current_node: NodeIndex,
+    pub ant_index: i64,
+    pub iteration_index: i64,
+    pub distance: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -29,12 +33,12 @@ impl EdgeInfo {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct EdgeAnt {
-    index: EdgeIndex,
-    source: NodeIndex,
-    target: NodeIndex,
-    probability: f32,
-    edge_info: EdgeInfo,
+pub struct EdgeAnt {
+    pub index: EdgeIndex,
+    pub source: NodeIndex,
+    pub target: NodeIndex,
+    pub probability: f32,
+    pub edge_info: EdgeInfo,
 }
 
 fn edge_to_edge_ant(edge: &EdgeReference<'_, Edge<EdgeInfo>>) -> EdgeAnt {
@@ -48,11 +52,14 @@ fn edge_to_edge_ant(edge: &EdgeReference<'_, Edge<EdgeInfo>>) -> EdgeAnt {
 }
 
 impl Ant {
-    fn new(start_index: NodeIndex) -> Self {
+    fn new(start_index: NodeIndex, ant_index: i64, iteration_index: i64) -> Self {
         Self {
             tabu: vec![],
             current_node: start_index,
             edges: vec![],
+            ant_index: ant_index,
+            iteration_index: iteration_index,
+            distance: 0.0,
         }
     }
     fn add_tabu_node(&mut self, node_index: NodeIndex) {
@@ -134,8 +141,26 @@ fn update_edges(
     for ant in ants {
         let pheromones: f32 = q / ant.edges.iter().map(|x| x.edge_info.distance).sum::<f32>();
         for edge in &ant.edges {
+            let mut new_edge_data = edge.edge_info.clone();
+            new_edge_data.pheromones = new_edge_data.pheromones * p + pheromones;
+            new_edge_data.recalculate(alpha, beta);
+
+            let edge_to_change = g.g.edge_weight_mut(edge.index).unwrap();
+            edge_to_change.clone_from(
+                &Edge::new(new_edge_data)
+                    .with_color(Color32::from_rgba_unmultiplied(128, 128, 128, 0)),
+            );
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct IterationInfo {
+    pub index: usize,
+    pub old_edges: Vec<EdgeInfo>,
+    pub ants: Vec<Ant>,
+    pub best_ant_i: i64,
+    pub best_path_len: f32,
 }
 
 pub fn ant_algo(
@@ -146,13 +171,35 @@ pub fn ant_algo(
     beta: f32,
     q: f32,
     p: f32,
-) {
-    for iteration in 0..iterations_amount {
+) -> Vec<IterationInfo> {
+    let mut iterations: Vec<IterationInfo> = vec![];
+    for iteration_i in 0..iterations_amount {
+        let old_edges = g
+            .edges_iter()
+            .map(|x| x.1.data().unwrap().clone())
+            .collect::<Vec<_>>();
         let mut ants = vec![];
-        for i in 0..ant_amount {
-            let mut ant = Ant::new(random_node_idx(g).unwrap());
+        for ant_i in 0..ant_amount {
+            let mut ant = Ant::new(random_node_idx(g).unwrap(), ant_i, iteration_i);
             ant.travel_graph(g);
+            ant.distance = ant.edges.iter().map(|x| x.edge_info.distance).sum::<f32>();
             ants.push(ant);
         }
+        update_edges(&ants, g, alpha, beta, q, p);
+        let best_ant_i = ants
+            .iter()
+            .enumerate()
+            .min_by(|x, y| x.1.distance.total_cmp(&y.1.distance))
+            .unwrap()
+            .0;
+        let best_path_len = ants[best_ant_i].distance;
+        iterations.push(IterationInfo {
+            index: iteration_i as usize,
+            old_edges: old_edges,
+            ants: ants,
+            best_ant_i: best_ant_i as i64,
+            best_path_len: best_path_len,
+        })
     }
+    iterations
 }
