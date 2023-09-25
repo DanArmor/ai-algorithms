@@ -51,6 +51,8 @@ pub struct AntApp {
     iteration_i: i64,
     ant_i: i64,
     edge_i: i64,
+    show_pheromones: bool,
+    pheromones_k: f32,
 }
 
 fn distance(a: Vec2, b: Vec2) -> f32 {
@@ -68,6 +70,8 @@ impl AntApp {
             iteration_i: 0,
             ant_i: 0,
             edge_i: 0,
+            show_pheromones: true,
+            pheromones_k: 1.0,
         };
         for _ in 0..app.ant_options.nodes {
             app.add_random_node();
@@ -168,8 +172,8 @@ impl AntApp {
             }
         });
 
-        ui.add(Slider::new(&mut self.ant_options.alpha, 0. ..=1.).text("alpha"));
-        ui.add(Slider::new(&mut self.ant_options.beta, 0. ..=1.).text("beta"));
+        ui.add(Slider::new(&mut self.ant_options.alpha, 0. ..=400.).text("alpha"));
+        ui.add(Slider::new(&mut self.ant_options.beta, 0. ..=400.).text("beta"));
         ui.add(Slider::new(&mut self.ant_options.p, 0. ..=1.).text("p"));
         ui.add(Slider::new(&mut self.ant_options.q, 1. ..=10000.).text("Q"));
         ui.add(Slider::new(&mut self.ant_options.ant_amount, 1..=128).text("Ant amount"));
@@ -190,6 +194,9 @@ impl AntApp {
         }
     }
     fn reset_graph_color(&mut self) {
+        self.g.g.node_weights_mut().for_each(|x| {
+            x.clone_from(&x.clone().with_color(Color32::from_rgb(200, 200, 200)));
+        });
         self.g.g.edge_weights_mut().for_each(|x| {
             x.clone_from(
                 &Edge::new(x.data().unwrap().clone())
@@ -199,6 +206,9 @@ impl AntApp {
     }
     fn reset_graph(&mut self) {
         self.solution = None;
+        self.g.g.node_weights_mut().for_each(|x| {
+            x.clone_from(&x.clone().with_color(Color32::from_rgb(200, 200, 200)));
+        });
         self.g.g.edge_weights_mut().for_each(|x| {
             let mut new_edge_data = x.data().unwrap().clone();
             new_edge_data.pheromones = 0.0;
@@ -215,20 +225,32 @@ impl AntApp {
                 let v = &v.solution;
                 let iteration = &v[self.iteration_i as usize];
                 let ant = &iteration.ants[self.ant_i as usize];
-
-                iteration
-                    .old_edges
-                    .iter()
-                    .zip(self.g.g.edge_weights_mut())
-                    .for_each(|(color_edge, x)| {
-                        x.clone_from(&x.clone().with_color(Color32::from_rgba_unmultiplied(
-                            0,
-                            ((0.0 as f32 + 255 as f32 * color_edge.pheromones) as u8).clamp(0, 255),
-                            0,
-                            ((0.0 as f32 + 255 as f32 * color_edge.pheromones) as u8).clamp(0, 255),
-                        )));
-                    });
-
+                if self.show_pheromones {
+                    iteration
+                        .old_edges
+                        .iter()
+                        .zip(self.g.g.edge_weights_mut())
+                        .for_each(|(color_edge, x)| {
+                            x.clone_from(
+                                &x.clone().with_color(Color32::from_rgba_unmultiplied(
+                                    0,
+                                    (((0.0 as f32 + 255 as f32 * color_edge.pheromones)
+                                        * self.pheromones_k)
+                                        as u8)
+                                        .clamp(0, 255),
+                                    0,
+                                    (((0.0 as f32 + 255 as f32 * color_edge.pheromones)
+                                        * self.pheromones_k)
+                                        as u8)
+                                        .clamp(0, 255),
+                                )),
+                            );
+                        });
+                }
+                for i in 0..=self.edge_i {
+                    let node = self.g.g.node_weight_mut(ant.tabu[i as usize]).unwrap();
+                    node.clone_from(&node.clone().with_color(Color32::from_rgb(85, 24, 93)));
+                }
                 for i in 0..=self.edge_i {
                     let e = self
                         .g
@@ -237,7 +259,7 @@ impl AntApp {
                         .unwrap();
                     e.clone_from(
                         &e.clone()
-                            .with_color(Color32::from_rgba_unmultiplied(0, 255, 255, 128)),
+                            .with_color(Color32::from_rgba_unmultiplied(255, 213, 36, 128)),
                     );
                 }
             }
@@ -376,6 +398,25 @@ impl App for AntApp {
                                             } else if self.ant_i - ant_before != 0 {
                                                 self.edge_i = 0;
                                             }
+                                            self.update_graph();
+                                        }
+                                    }
+                                    if ui
+                                        .checkbox(&mut self.show_pheromones, "Show pheromones")
+                                        .changed()
+                                    {
+                                        self.reset_graph_color();
+                                        self.update_graph();
+                                    }
+                                    let old_pheromones_k = self.pheromones_k;
+                                    ui.add_enabled(
+                                        self.show_pheromones,
+                                        Slider::new(&mut self.pheromones_k, 0. ..=1.)
+                                            .text("Pheromones visiability"),
+                                    );
+                                    if old_pheromones_k != self.pheromones_k {
+                                        if self.show_pheromones {
+                                            self.reset_graph_color();
                                             self.update_graph();
                                         }
                                     }

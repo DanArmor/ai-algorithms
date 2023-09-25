@@ -9,7 +9,7 @@ use weighted_rand::builder::NewBuilder;
 
 #[derive(Debug, Clone)]
 pub struct Ant {
-    tabu: Vec<NodeIndex>,
+    pub tabu: Vec<NodeIndex>,
     pub edges: Vec<EdgeAnt>,
     current_node: NodeIndex,
     pub ant_index: i64,
@@ -140,7 +140,7 @@ fn update_edges(
         let pheromones: f32 = q / ant.edges.iter().map(|x| x.edge_info.distance).sum::<f32>();
         for edge in &ant.edges {
             let mut new_edge_data = edge.edge_info.clone();
-            new_edge_data.pheromones = new_edge_data.pheromones * p + pheromones;
+            new_edge_data.pheromones = new_edge_data.pheromones * (1.0 - p) + pheromones;
             new_edge_data.recalculate(alpha, beta);
 
             let edge_to_change = g.g.edge_weight_mut(edge.index).unwrap();
