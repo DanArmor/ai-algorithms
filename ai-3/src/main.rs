@@ -3,7 +3,7 @@ use eframe::{run_native, App, CreationContext};
 use egui::{CollapsingHeader, Color32, Context, ScrollArea, Slider, Ui, Vec2};
 use egui_graphs::{Edge, Graph, GraphView, Node};
 use petgraph::{
-    stable_graph::{NodeIndex, StableGraph, StableUnGraph},
+    stable_graph::{NodeIndex, StableUnGraph},
     visit::EdgeRef,
     Undirected,
 };
@@ -40,7 +40,6 @@ struct SolutionInfo {
     solution: Vec<IterationInfo>,
     best_iteration: usize,
     best_ant: i64,
-    best_path_len: f32,
 }
 
 pub struct AntApp {
@@ -70,7 +69,7 @@ impl AntApp {
             ant_i: 0,
             edge_i: 0,
         };
-        for i in 0..app.ant_options.nodes {
+        for _ in 0..app.ant_options.nodes {
             app.add_random_node();
         }
         app
@@ -216,7 +215,6 @@ impl AntApp {
                 let v = &v.solution;
                 let iteration = &v[self.iteration_i as usize];
                 let ant = &iteration.ants[self.ant_i as usize];
-                let edge = &ant.edges[self.edge_i as usize];
 
                 iteration
                     .old_edges
@@ -300,7 +298,6 @@ impl App for AntApp {
                                     solution: res,
                                     best_iteration: best_iteration.index,
                                     best_ant: best_iteration.best_ant_i,
-                                    best_path_len: best_iteration.best_path_len,
                                 };
                                 self.solution = Some(solution);
                                 self.update_graph();

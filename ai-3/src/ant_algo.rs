@@ -1,10 +1,8 @@
-use eframe::{run_native, App, CreationContext};
-use egui::{CollapsingHeader, Color32, Context, ScrollArea, Slider, Ui, Vec2};
-use egui_graphs::{Edge, Graph, GraphView, Node};
+use egui::Color32;
+use egui_graphs::{Edge, Graph};
 use petgraph::{
-    stable_graph::{EdgeIndex, EdgeReference, NodeIndex, StableGraph, StableUnGraph},
+    stable_graph::{EdgeIndex, EdgeReference, NodeIndex},
     visit::EdgeRef,
-    Undirected,
 };
 use rand::Rng;
 use weighted_rand::builder::NewBuilder;
