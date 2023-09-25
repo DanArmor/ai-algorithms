@@ -15,7 +15,10 @@ pub struct AntOptions {
     alpha: f32,
     beta: f32,
     q: f32,
+    p: f32,
     nodes: i64,
+    ant_amount: i64,
+    iterations_amount: i64,
 }
 
 impl Default for AntOptions {
@@ -24,7 +27,10 @@ impl Default for AntOptions {
             alpha: 0.5,
             beta: 0.5,
             q: 64.0,
+            p: 0.5,
             nodes: 3,
+            ant_amount: 1,
+            iterations_amount: 1,
         }
     }
 }
@@ -37,7 +43,7 @@ pub struct AntApp {
 }
 
 fn distance(a: Vec2, b: Vec2) -> f32 {
-    ((a.x - b.x).powi(2) - (a.y - b.y).powi(2)).sqrt()
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
 }
 
 impl AntApp {
@@ -146,7 +152,12 @@ impl AntApp {
 
         ui.add(Slider::new(&mut self.ant_options.alpha, 0. ..=1.).text("alpha"));
         ui.add(Slider::new(&mut self.ant_options.beta, 0. ..=1.).text("beta"));
-        ui.add(Slider::new(&mut self.ant_options.q, 0. ..=128.).text("Q"));
+        ui.add(Slider::new(&mut self.ant_options.p, 0. ..=1.).text("p"));
+        ui.add(Slider::new(&mut self.ant_options.q, 1. ..=128.).text("Q"));
+        ui.add(Slider::new(&mut self.ant_options.ant_amount, 1..=128).text("Ant amount"));
+        ui.add(
+            Slider::new(&mut self.ant_options.iterations_amount, 1..=128).text("Iterations amount"),
+        );
     }
     fn ui_settings(&mut self, ui: &mut Ui) {
         if ui
@@ -179,7 +190,15 @@ impl App for AntApp {
                             self.ant_options_sliders(ui);
 
                             if ui.button("Calculate").clicked() {
-                                ant_algo::ant_algo(&self.g, self.random_node_idx().unwrap());
+                                ant_algo::ant_algo(
+                                    &mut self.g,
+                                    self.ant_options.iterations_amount,
+                                    self.ant_options.ant_amount,
+                                    self.ant_options.alpha,
+                                    self.ant_options.beta,
+                                    self.ant_options.q,
+                                    self.ant_options.p
+                                );
                             }
                         });
                     CollapsingHeader::new("Ui")
