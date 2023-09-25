@@ -1,7 +1,8 @@
 use ant_algo::IterationInfo;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use eframe::{run_native, App, CreationContext};
 use egui::{CollapsingHeader, Color32, Context, ScrollArea, Slider, Ui, Vec2};
-use egui_graphs::{Edge, Graph, GraphView, Node};
+use egui_graphs::{Change, ChangeNode, Edge, Graph, GraphView, Node, SettingsInteraction};
 use petgraph::{
     stable_graph::{NodeIndex, StableUnGraph},
     visit::EdgeRef,
@@ -53,6 +54,9 @@ pub struct AntApp {
     edge_i: i64,
     show_pheromones: bool,
     pheromones_k: f32,
+    drag_enabled: bool,
+    changes_receiver: Receiver<Change>,
+    changes_sender: Sender<Change>,
 }
 
 fn distance(a: Vec2, b: Vec2) -> f32 {
@@ -61,6 +65,7 @@ fn distance(a: Vec2, b: Vec2) -> f32 {
 
 impl AntApp {
     fn new(_: &CreationContext<'_>) -> Self {
+        let (changes_sender, changes_receiver) = unbounded();
         let mut app = Self {
             g: Graph::from(&StableUnGraph::default()),
             ant_options: AntOptions::default(),
@@ -72,6 +77,9 @@ impl AntApp {
             edge_i: 0,
             show_pheromones: true,
             pheromones_k: 1.0,
+            drag_enabled: false,
+            changes_receiver: changes_receiver,
+            changes_sender: changes_sender,
         };
         for _ in 0..app.ant_options.nodes {
             app.add_random_node();
@@ -192,6 +200,7 @@ impl AntApp {
             self.settings_navigation.zoom_and_pan_enabled =
                 !self.settings_navigation.zoom_and_pan_enabled;
         }
+        ui.checkbox(&mut self.drag_enabled, "Drag enabled");
     }
     fn reset_graph_color(&mut self) {
         self.g.g.node_weights_mut().for_each(|x| {
@@ -262,6 +271,25 @@ impl AntApp {
                             .with_color(Color32::from_rgba_unmultiplied(255, 213, 36, 128)),
                     );
                 }
+            }
+            None => (),
+        }
+    }
+    fn handle_changes(&mut self) {
+        let mut node_id: Option<NodeIndex> = None;
+        self.changes_receiver.try_iter().for_each(|ch| {
+            if let Change::Node(ChangeNode::Location { id, old, new }) = ch.clone() {
+                node_id = Some(id);
+            }
+        });
+        match node_id {
+            Some(id) => {
+                self.reset_graph();
+                let neighbors = self.g.g.neighbors_undirected(id).collect::<Vec<_>>();
+                neighbors.iter().for_each(|n| {
+                    self.remove_edges(id, *n);
+                });
+                self.connect_node(id)
             }
             None => (),
         }
@@ -449,9 +477,14 @@ impl App for AntApp {
             ui.add(
                 &mut GraphView::new(&mut self.g)
                     .with_styles(settings_style)
-                    .with_navigations(settings_navigation),
+                    .with_navigations(settings_navigation)
+                    .with_interactions(
+                        &SettingsInteraction::new().with_dragging_enabled(self.drag_enabled),
+                    )
+                    .with_changes(&self.changes_sender),
             );
         });
+        self.handle_changes();
     }
 }
 
