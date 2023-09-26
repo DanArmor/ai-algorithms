@@ -1,18 +1,15 @@
 [package]
-name = "ai-1"
+name = "art-1"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bit-vec = "0.6.3"
 eframe = "0.22.0"
 egui = "0.22.0"
-egui-plotter = "0.3.0"
-egui_extras = { version = "0.22.0", features = ["image"] }
+egui_extras = "0.22.0"
+egui_grid = "0.2.0"
 env_logger = "0.10.0"
-image = { version = "0.24.7", features = ["jpeg", "png"] }
-poll-promise = "0.3.0"
 rand = "0.8.5"
-random-string = "1.0.0"
-rfd = "0.11.4"
