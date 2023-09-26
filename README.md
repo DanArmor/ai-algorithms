@@ -1,6 +1,6 @@
 # ai-algorithms
 
-Repo for AI algorithms visualisation made with Rust.
+AI algorithms visualization made with Rust
 
 Contains:
 * [Simulated annealing](https://en.wikipedia.org/wiki/Simulated_annealing)
