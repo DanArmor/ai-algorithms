@@ -10,26 +10,10 @@ use petgraph::{
 use rand::Rng;
 
 mod settings;
+mod neuro;
 
-#[derive(Debug, PartialEq)]
-enum NeuroLayers {
-    Zero,
-    One,
-    Two,
-}
 
-#[derive(Debug, PartialEq)]
-enum ActivationFunc {
-    Sig,
-    Gip,
-    Arctn,
-}
-
-#[derive(Debug, PartialEq)]
-enum LearningMode {
-    OneByOne,
-    Packet,
-}
+use neuro::*;
 
 pub struct NeuroApp {
     g: Graph<(), (), Undirected>,
