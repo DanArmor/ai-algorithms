@@ -28,7 +28,7 @@ impl NeuroLayer {
             raw_input: vec![0.0; neurons_amount],
             input: vec![0.0; neurons_amount],
             output: vec![0.0; neurons_amount],
-            basis: vec![1.0; neurons_amount],
+            basis: vec![-1.0; neurons_amount],
             weights: (0..neurons_amount)
                 .map(|_| {
                     (0..back_links_amount)
@@ -83,23 +83,20 @@ impl NeuroLayer {
             self.clear();
             return;
         }
-        let mut grad = self.old_grads[0].clone();
-        for k in 1..self.old_grads.len() {
-            for i in 0..grad.len() {
-                grad[i] += self.old_grads[k][i] * prev_outputs[k][i];
+
+        for k in 0..self.old_grads.len() {
+            for i in 0..self.weights.len() {
+                for j in 0..self.weights[i].len() {
+                    self.weights[i][j] = self.weights[i][j]
+                        - learning_rate * self.old_grads[k][i] * prev_outputs[k][j]
+                            / self.old_grads.len() as f32;
+                }
+            }
+            for i in 0..self.basis.len() {
+                self.basis[i] -= learning_rate * self.old_grads[k][i] / self.old_grads.len() as f32;
             }
         }
-        for i in 0..grad.len() {
-            grad[i] = grad[i] / self.old_grads.len() as f32;
-        }
-        for i in 0..self.weights.len() {
-            for j in 0..self.weights[i].len() {
-                self.weights[i][j] = self.weights[i][j] - learning_rate * grad[i];
-            }
-        }
-        for i in 0..self.basis.len() {
-            self.basis[i] -= learning_rate * grad[i];
-        }
+
         self.clear();
     }
     pub fn clear(&mut self) {
@@ -170,13 +167,12 @@ impl std::fmt::Debug for Activation {
     }
 }
 
-fn sigmoid(v: f32) -> f32 {
-    1.0 / (1.0 + f32::exp(-v))
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + f32::exp(-x))
 }
 
-fn sigmoid_df(v: f32) -> f32 {
-    let x = sigmoid(v);
-    x * (1.0 - x)
+fn sigmoid_df(x: f32) -> f32 {
+    sigmoid(x) * (1.0 - sigmoid(x))
 }
 
 fn simple_err_func(x: f32, y: f32) -> f32 {
@@ -245,7 +241,7 @@ impl NeuroNetwork {
             input = self.layers[i].forward(input, &self.activation);
         }
     }
-    fn backward(&mut self, desired_output: Vec<f32>) {
+    fn backward(&mut self, desired_output: Vec<f32>) -> f32 {
         let mut grad = self.layers[self.layers.len() - 1]
             .output
             .iter()
@@ -253,6 +249,7 @@ impl NeuroNetwork {
             .zip(self.layers[self.layers.len() - 1].input.iter())
             .map(|((x, y), z)| self.error_function.df(*x, *y) as f32 * self.activation.df(*z))
             .collect::<Vec<_>>();
+        let cost = grad.iter().sum::<f32>();
         let mut weights = self.layers[self.layers.len() - 1].weights.clone();
 
         let layers_amount = self.layers.len();
@@ -262,13 +259,16 @@ impl NeuroNetwork {
         for i in (1..layers_amount - 1).rev() {
             (grad, weights) = self.layers[i].backward(grad, weights, &self.activation);
         }
+        cost
     }
-    fn train_step(&mut self, batch: &Batch, learning_rate: f32) {
+    fn train_step(&mut self, batch: &Batch, learning_rate: f32) -> f32 {
+        let mut batch_cost = 0.0;
         batch.data.iter().for_each(|sample| {
             self.forward(sample.data.clone());
-            self.backward(sample.solution.clone());
+            batch_cost += self.backward(sample.solution.clone());
         });
         self.correct(learning_rate);
+        batch_cost
     }
     fn correct(&mut self, learning_rate: f32) {
         for i in 1..self.layers.len() {
@@ -286,10 +286,13 @@ impl NeuroNetwork {
             }
             batches.push(Batch::new(batch));
         }
-        for _ in 0..self.epoch_amount {
+        for i in 0..self.epoch_amount {
+            let mut epoch_cost = 0.0;
             for j in 0..batches.len() {
-                println!("D: {:#?}\n", self);
-                self.train_step(&batches[j], learning_rate);
+                epoch_cost += self.train_step(&batches[j], learning_rate);
+            }
+            if i % 100 == 0 {
+                println!("Cost: {}", epoch_cost);
             }
         }
     }

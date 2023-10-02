@@ -129,24 +129,25 @@ impl App for NeuroApp {
                             ui.horizontal(|ui| {
                                 ui.button("Recognize");
                                 if ui.button("Learn").clicked() {
-                                    let mut net =
-                                        neuro::NeuroNetwork::new(vec![2, 3, 1]).with_epoch(4200);
+                                    let mut net = neuro::NeuroNetwork::new(vec![2, 6, 2])
+                                        .with_epoch(10000)
+                                        .with_batch_size(1);
                                     let examples = vec![
                                         Sample {
                                             data: vec![1.0, 1.0],
-                                            solution: vec![0.0],
+                                            solution: vec![1.0, 0.0],
                                         },
                                         Sample {
                                             data: vec![1.0, 0.0],
-                                            solution: vec![1.0],
+                                            solution: vec![0.0, 1.0],
                                         },
                                         Sample {
                                             data: vec![0.0, 1.0],
-                                            solution: vec![1.0],
+                                            solution: vec![0.0, 1.0],
                                         },
                                         Sample {
                                             data: vec![0.0, 0.0],
-                                            solution: vec![0.0],
+                                            solution: vec![1.0, 0.0],
                                         },
                                     ];
                                     net.train(examples, 0.1);
