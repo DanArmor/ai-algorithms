@@ -9,9 +9,8 @@ use petgraph::{
 };
 use rand::Rng;
 
-mod settings;
 mod neuro;
-
+mod settings;
 
 use neuro::*;
 
@@ -25,7 +24,8 @@ pub struct NeuroApp {
     activation_func: ActivationFunc,
     learning_mode: LearningMode,
     learning_norm: f32,
-    amount_epoch: usize
+    amount_epoch: usize,
+    network: Option<neuro::NeuroNetwork>,
 }
 
 fn distance(a: Vec2, b: Vec2) -> f32 {
@@ -45,7 +45,8 @@ impl NeuroApp {
             activation_func: ActivationFunc::Sig,
             learning_mode: LearningMode::OneByOne,
             learning_norm: 0.5,
-            amount_epoch: 1000
+            amount_epoch: 1000,
+            network: None,
         };
         app
     }
@@ -119,15 +120,48 @@ impl App for NeuroApp {
 
                             ui.label("Amount of epoch");
                             ui.separator();
-                            ui.add(Slider::new(&mut self.amount_epoch, 1 ..=4000));
+                            ui.add(Slider::new(&mut self.amount_epoch, 1..=4000));
 
                             ui.add_space(10.0);
 
                             ui.label("Actions");
                             ui.separator();
-                            ui.horizontal(|ui|{
+                            ui.horizontal(|ui| {
                                 ui.button("Recognize");
-                                ui.button("Learn");
+                                if ui.button("Learn").clicked() {
+                                    let mut net =
+                                        neuro::NeuroNetwork::new(vec![2, 3, 1]).with_epoch(4200);
+                                    let examples = vec![
+                                        Sample {
+                                            data: vec![1.0, 1.0],
+                                            solution: vec![0.0],
+                                        },
+                                        Sample {
+                                            data: vec![1.0, 0.0],
+                                            solution: vec![1.0],
+                                        },
+                                        Sample {
+                                            data: vec![0.0, 1.0],
+                                            solution: vec![1.0],
+                                        },
+                                        Sample {
+                                            data: vec![0.0, 0.0],
+                                            solution: vec![0.0],
+                                        },
+                                    ];
+                                    net.train(examples, 0.1);
+                                    let output = net.solve(vec![1.0, 1.0]);
+                                    println!("{:?}", output);
+
+                                    let output = net.solve(vec![1.0, 0.0]);
+                                    println!("{:?}", output);
+
+                                    let output = net.solve(vec![0.0, 1.0]);
+                                    println!("{:?}", output);
+
+                                    let output = net.solve(vec![0.0, 0.0]);
+                                    println!("{:?}", output);
+                                }
                             });
                         });
                     CollapsingHeader::new("Ui")
