@@ -8,6 +8,9 @@ pub enum Solution {
     Airplane,
 }
 
+pub type ActivationFn = fn(Vec<f32>) -> Vec<f32>;
+pub type ErrorFn = fn(f32, f32) -> f32;
+
 #[derive(Debug, Clone)]
 pub struct Sample {
     pub data: Vec<f32>,
@@ -24,10 +27,11 @@ pub struct NeuroLayer {
     grad: Vec<f32>,
     old_grads: Vec<Vec<f32>>,
     old_outputs: Vec<Vec<f32>>,
+    pub activation: Activation,
 }
 
 impl NeuroLayer {
-    pub fn new(neurons_amount: usize, back_links_amount: usize) -> Self {
+    pub fn new(neurons_amount: usize, back_links_amount: usize, activation: Activation) -> Self {
         Self {
             raw_input: vec![0.0; neurons_amount],
             input: vec![0.0; neurons_amount],
@@ -43,9 +47,10 @@ impl NeuroLayer {
             grad: vec![0.0; neurons_amount],
             old_grads: vec![],
             old_outputs: vec![],
+            activation,
         }
     }
-    pub fn forward(&mut self, input: Vec<f32>, activation: &Activation) -> Vec<f32> {
+    pub fn forward(&mut self, input: Vec<f32>) -> Vec<f32> {
         self.raw_input = input;
         self.input = self
             .weights
@@ -59,9 +64,7 @@ impl NeuroLayer {
                     + b
             })
             .collect::<Vec<f32>>();
-        for i in 0..self.output.len() {
-            self.output[i] = activation.f(self.input[i]);
-        }
+        self.output = self.activation.f(self.input.clone());
         self.old_outputs.push(self.output.clone());
         self.output.clone()
     }
@@ -69,14 +72,16 @@ impl NeuroLayer {
         &mut self,
         grad: Vec<f32>,
         weights: Vec<Vec<f32>>,
-        activation: &Activation,
     ) -> (Vec<f32>, Vec<Vec<f32>>) {
         self.grad.fill(0.0);
         for i in 0..weights[0].len() {
             for j in 0..weights.len() {
                 self.grad[i] += grad[j] * weights[j][i];
             }
-            self.grad[i] *= activation.df(self.input[i]);
+        }
+        let df = self.activation.df(self.input.clone());
+        for i in 0..self.grad.len() {
+            self.grad[i] *= df[i];
         }
         self.old_grads.push(self.grad.clone());
 
@@ -114,23 +119,16 @@ pub struct NeuroNetwork {
     pub layers: Vec<NeuroLayer>,
     batch_size: usize,
     epoch_amount: usize,
-    activation: Activation,
     error_function: ErrorFunction,
 }
 
 struct ErrorFunction {
-    f: Box<dyn Fn(f32, f32) -> f32>,
-    df: Box<dyn Fn(f32, f32) -> f32>,
+    f: ErrorFn,
+    df: ErrorFn,
 }
 impl ErrorFunction {
-    pub fn new(
-        f: impl Fn(f32, f32) -> f32 + 'static,
-        df: impl Fn(f32, f32) -> f32 + 'static,
-    ) -> Self {
-        Self {
-            f: Box::new(f),
-            df: Box::new(df),
-        }
+    pub fn new(f: ErrorFn, df: ErrorFn) -> Self {
+        Self { f: f, df: df }
     }
     pub fn f(&self, x: f32, y: f32) -> f32 {
         (self.f)(x, y)
@@ -147,21 +145,18 @@ impl std::fmt::Debug for ErrorFunction {
 }
 
 pub struct Activation {
-    f: Box<dyn Fn(f32) -> f32>,
-    df: Box<dyn Fn(f32) -> f32>,
+    f: ActivationFn,
+    df: ActivationFn,
 }
 impl Activation {
-    pub fn new(f: impl Fn(f32) -> f32 + 'static, df: impl Fn(f32) -> f32 + 'static) -> Self {
-        Self {
-            f: Box::new(f),
-            df: Box::new(df),
-        }
+    pub fn new(f: ActivationFn, df: ActivationFn) -> Self {
+        Self { f: f, df: df }
     }
-    pub fn f(&self, x: f32) -> f32 {
-        (self.f)(x)
+    pub fn f(&self, v: Vec<f32>) -> Vec<f32> {
+        (self.f)(v)
     }
-    pub fn df(&self, x: f32) -> f32 {
-        (self.df)(x)
+    pub fn df(&self, v: Vec<f32>) -> Vec<f32> {
+        (self.df)(v)
     }
 }
 
@@ -171,12 +166,13 @@ impl std::fmt::Debug for Activation {
     }
 }
 
-fn sigmoid(x: f32) -> f32 {
-    1.0 / (1.0 + f32::exp(-x))
+pub fn sigmoid(v: Vec<f32>) -> Vec<f32> {
+    v.into_iter().map(|x| 1.0 / (1.0 + f32::exp(-x))).collect()
 }
 
-fn sigmoid_df(x: f32) -> f32 {
-    sigmoid(x) * (1.0 - sigmoid(x))
+pub fn sigmoid_df(v: Vec<f32>) -> Vec<f32> {
+    let t = sigmoid(v);
+    t.into_iter().map(|x| x * (1.0 - x)).collect()
 }
 
 fn simple_err_func(x: f32, y: f32) -> f32 {
@@ -190,13 +186,22 @@ fn simple_err_func_df(x: f32, y: f32) -> f32 {
 impl NeuroNetwork {
     pub fn new(layers: Vec<usize>) -> NeuroNetwork {
         let mut neuro_layers: Vec<NeuroLayer> = Vec::with_capacity(layers.len());
-        let activation = Activation::new(sigmoid, sigmoid_df);
-        neuro_layers.push(NeuroLayer::new(layers[0], 0));
+        neuro_layers.push(NeuroLayer::new(
+            layers[0],
+            0,
+            Activation::new(sigmoid, sigmoid_df),
+        ));
         for i in 1..layers.len() {
-            neuro_layers.push(NeuroLayer::new(layers[i], layers[i - 1]));
+            neuro_layers.push(NeuroLayer::new(
+                layers[i],
+                layers[i - 1],
+                Activation::new(sigmoid, sigmoid_df),
+            ));
         }
         for k in 1..neuro_layers.len() {
-            let fan = (neuro_layers[k].weights.len() as f32 + neuro_layers[k - 1].weights.len() as f32).sqrt();
+            let fan = (neuro_layers[k].weights.len() as f32
+                + neuro_layers[k - 1].weights.len() as f32)
+                .sqrt();
             let glorot = 6.0f32.sqrt() / fan;
             let between = Uniform::from(-glorot..glorot);
             let mut rng = rand::thread_rng();
@@ -214,25 +219,32 @@ impl NeuroNetwork {
             layers: neuro_layers,
             batch_size: 1,
             epoch_amount: 100,
-            activation: Activation::new(sigmoid, sigmoid_df),
             error_function: ErrorFunction::new(simple_err_func, simple_err_func_df),
         }
     }
-    pub fn with_activation(
-        self,
-        f: impl Fn(f32) -> f32 + 'static,
-        df: impl Fn(f32) -> f32 + 'static,
-    ) -> Self {
+    pub fn with_activation(self, f: ActivationFn, df: ActivationFn) -> Self {
         Self {
-            activation: Activation::new(f, df),
+            layers: self
+                .layers
+                .into_iter()
+                .map(|x| NeuroLayer {
+                    activation: Activation::new(f, df),
+                    ..x
+                })
+                .collect(),
             ..self
         }
     }
-    pub fn with_error(
-        self,
-        f: impl Fn(f32, f32) -> f32 + 'static,
-        df: impl Fn(f32, f32) -> f32 + 'static,
-    ) -> Self {
+    pub fn with_last_activation(self, f: ActivationFn, df: ActivationFn) -> Self {
+        let mut new_net = Self {
+            layers: self.layers,
+            ..self
+        };
+        let layers_amount = new_net.layers.len();
+        new_net.layers[layers_amount - 1].activation = Activation::new(f, df);
+        new_net
+    }
+    pub fn with_error(self, f: ErrorFn, df: ErrorFn) -> Self {
         Self {
             error_function: ErrorFunction::new(f, df),
             ..self
@@ -257,16 +269,17 @@ impl NeuroNetwork {
         self.layers[0].old_outputs.push(data.clone());
         let mut input = self.layers[0].output.clone();
         for i in 1..self.layers.len() {
-            input = self.layers[i].forward(input, &self.activation);
+            input = self.layers[i].forward(input);
         }
     }
     fn backward(&mut self, desired_output: Vec<f32>) -> f32 {
+        let last_activation = &self.layers[self.layers.len() - 1].activation;
         let mut grad = self.layers[self.layers.len() - 1]
             .output
             .iter()
             .zip(desired_output.iter())
-            .zip(self.layers[self.layers.len() - 1].input.iter())
-            .map(|((x, y), z)| self.error_function.df(*x, *y) as f32 * self.activation.df(*z))
+            .zip(last_activation.df(self.layers[self.layers.len() - 1].input.clone()))
+            .map(|((x, y), z)| self.error_function.df(*x, *y) as f32 * z)
             .collect::<Vec<_>>();
         let cost = grad.iter().sum::<f32>();
         let mut weights = self.layers[self.layers.len() - 1].weights.clone();
@@ -276,7 +289,7 @@ impl NeuroNetwork {
         self.layers[layers_amount - 1].grad = grad.clone();
 
         for i in (1..layers_amount - 1).rev() {
-            (grad, weights) = self.layers[i].backward(grad, weights, &self.activation);
+            (grad, weights) = self.layers[i].backward(grad, weights);
         }
         cost
     }
@@ -287,7 +300,7 @@ impl NeuroNetwork {
             batch_cost += self.backward(sample.solution.clone());
         });
         self.correct(learning_rate);
-        batch_cost
+        batch_cost / batch.data.len() as f32
     }
     fn correct(&mut self, learning_rate: f32) {
         for i in 1..self.layers.len() {
@@ -297,14 +310,10 @@ impl NeuroNetwork {
         self.layers[0].correct(vec![], learning_rate);
     }
     pub fn train(&mut self, data: Vec<Sample>, learning_rate: f32) {
-        let mut batches: Vec<Batch> = vec![];
-        for i in (0..data.len()).step_by(self.batch_size) {
-            let mut batch: Vec<&Sample> = vec![];
-            for j in 0..self.batch_size {
-                batch.push(&data[i + j]);
-            }
-            batches.push(Batch::new(batch));
-        }
+        let mut batches: Vec<Batch> = data
+            .chunks(self.batch_size)
+            .map(|samples| Batch::new(samples.into()))
+            .collect();
         for i in 0..self.epoch_amount {
             let mut epoch_cost = 0.0;
             for j in 0..batches.len() {
@@ -348,11 +357,11 @@ pub enum LearningMode {
     Packet,
 }
 
-struct Batch<'a> {
-    data: Vec<&'a Sample>,
+struct Batch {
+    data: Vec<Sample>,
 }
-impl<'a> Batch<'a> {
-    fn new(data: Vec<&'a Sample>) -> Self {
+impl Batch {
+    fn new(data: Vec<Sample>) -> Self {
         Self { data: data }
     }
 }

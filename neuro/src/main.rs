@@ -2,12 +2,23 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use eframe::{run_native, App, CreationContext};
 use egui::{Align, CollapsingHeader, Color32, Context, Layout, ScrollArea, Slider, Ui, Vec2};
 use egui_graphs::{Change, ChangeNode, Edge, Graph, GraphView, Node, SettingsInteraction};
+use image;
+use image::GenericImageView;
+use notify::{
+    event::ModifyKind, Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use petgraph::{
     stable_graph::{NodeIndex, StableUnGraph},
     visit::EdgeRef,
     Undirected,
 };
 use rand::Rng;
+use std::io;
+use std::io::Write;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 mod neuro;
 mod settings;
@@ -18,14 +29,19 @@ pub struct NeuroApp {
     g: Graph<(), (), Undirected>,
     settings_style: settings::SettingsStyle,
     settings_navigation: settings::SettingsNavigation,
-    changes_receiver: Receiver<Change>,
-    changes_sender: Sender<Change>,
+    changes_receiver: Receiver<notify::Event>,
     neuro_layers: NeuroLayers,
     activation_func: ActivationFunc,
     learning_mode: LearningMode,
     learning_norm: f32,
     amount_epoch: usize,
+    batch_size: usize,
+    input_file_path: String,
+    train_data_folder_path: String,
     network: Option<neuro::NeuroNetwork>,
+    watcher: RecommendedWatcher,
+    watching: Option<String>,
+    promise: Option<poll_promise::Promise<NeuroNetwork>>,
 }
 
 fn distance(a: Vec2, b: Vec2) -> f32 {
@@ -35,44 +51,125 @@ fn distance(a: Vec2, b: Vec2) -> f32 {
 impl NeuroApp {
     fn new(_: &CreationContext<'_>) -> Self {
         let (changes_sender, changes_receiver) = unbounded();
+        let mut watcher: RecommendedWatcher = Watcher::new(
+            move |result: Result<Event, Error>| match result {
+                Ok(event) => {
+                    if event.kind.is_modify() {
+                        changes_sender.send(event);
+                    }
+                }
+                Err(e) => (),
+            },
+            notify::Config::default()
+                .with_compare_contents(true)
+                .with_poll_interval(Duration::from_millis(500)),
+        )
+        .unwrap();
         let mut app = Self {
             g: Graph::from(&StableUnGraph::default()),
             settings_style: settings::SettingsStyle::default(),
             settings_navigation: settings::SettingsNavigation::default(),
             changes_receiver: changes_receiver,
-            changes_sender: changes_sender,
             neuro_layers: NeuroLayers::Zero,
             activation_func: ActivationFunc::Sig,
             learning_mode: LearningMode::OneByOne,
             learning_norm: 0.5,
+            batch_size: 1,
             amount_epoch: 1000,
+            input_file_path: "".into(),
+            train_data_folder_path: "".into(),
             network: None,
+            watcher: watcher,
+            watching: None,
+            promise: None,
         };
         app
     }
-}
-
-fn tanh(x: f32) -> f32{
-    x.tanh()
-}
-
-fn tanh_df(x: f32) -> f32 {
-    1.0 - x.tanh().powi(2)
-}
-
-fn relu(x: f32) -> f32 {
-    if x > 0.0 {
-        x
-    } else {
-        0.0
+    fn handle_changes(&mut self) {
+        if self.network.is_none() {
+            return;
+        }
+        let file_path = &self.input_file_path;
+        self.changes_receiver.try_iter().for_each(|_| {
+            let input = get_file_data(file_path.clone());
+            let output = self.network.as_mut().unwrap().solve(input);
+            println!("R: {:#?}", output);
+        });
     }
 }
-fn relu_df(x:f32) -> f32 {
-    if x > 0.0 {
-        1.0
-    } else {
-        0.0
+
+fn get_file_data(file_path: String) -> Vec<f32> {
+    let mut img = image::open(file_path).unwrap();
+    let mut input: Vec<f32> = vec![0.0; 784];
+    for pixel in img.pixels() {
+        input[pixel.0 as usize * 28 + pixel.1 as usize] = 1.0 - pixel.2 .0[0] as f32 / 255.0;
     }
+    input
+}
+
+fn train() -> NeuroNetwork {
+    let train_len = 800;
+    let mut train_labels: Vec<u8> = mnist_read::read_labels("train-labels-idx1-ubyte");
+    let mut train_data = mnist_read::read_data("train-images-idx3-ubyte")
+        .chunks(784)
+        .map(|v| v.into())
+        .collect::<Vec<Vec<u8>>>();
+    train_labels.truncate(train_len);
+    train_data.truncate(train_len);
+    let examples = train_labels
+        .iter()
+        .zip(train_data.iter())
+        .map(|(label, data)| {
+            let mut v: Vec<f32> = vec![0.0; 10];
+            v[*label as usize] = 1.0;
+            Sample {
+                data: data.iter().map(|x| *x as f32 / 255.0).collect::<Vec<_>>(),
+                solution: v,
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut net = neuro::NeuroNetwork::new(vec![784, 32, 32, 16, 10])
+        .with_epoch(3000)
+        .with_batch_size(10)
+        .with_activation(relu, relu_df)
+        .with_last_activation(softmax, softmax_df);
+
+    net.train(examples.clone(), 0.03);
+    net
+}
+
+fn tanh(v: Vec<f32>) -> Vec<f32> {
+    v.into_iter().map(|x| x.tanh()).collect()
+}
+
+fn tanh_df(v: Vec<f32>) -> Vec<f32> {
+    v.into_iter().map(|x| 1.0 - x.tanh().powi(2)).collect()
+}
+
+fn relu(v: Vec<f32>) -> Vec<f32> {
+    v.into_iter()
+        .map(|x| if x > 0.0 { x } else { 0.0 })
+        .collect()
+}
+fn relu_df(v: Vec<f32>) -> Vec<f32> {
+    v.into_iter()
+        .map(|x| if x > 0.0 { 1.0 } else { 0.0 })
+        .collect()
+}
+
+fn softmax(mut v: Vec<f32>) -> Vec<f32> {
+    let max = v.iter().max_by(|x, y| x.total_cmp(y)).unwrap().clone();
+    v = v.into_iter().map(|x| x - max).collect();
+    let sum = v.iter().map(|x| x.exp()).sum::<f32>();
+    if sum == 0.0 {
+        return vec![0.0; v.len()];
+    }
+    v.into_iter().map(|x| x.exp() / sum).collect()
+}
+
+fn softmax_df(v: Vec<f32>) -> Vec<f32> {
+    let t = softmax(v);
+    t.into_iter().map(|x| x * (1.0 - x)).collect()
 }
 
 impl App for NeuroApp {
@@ -118,20 +215,9 @@ impl App for NeuroApp {
 
                             ui.add_space(10.0);
 
-                            ui.label("Learning mode");
+                            ui.label("Batch size");
                             ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.radio_value(
-                                    &mut self.learning_mode,
-                                    LearningMode::OneByOne,
-                                    "One-by-one",
-                                );
-                                ui.radio_value(
-                                    &mut self.learning_mode,
-                                    LearningMode::Packet,
-                                    "Packet",
-                                );
-                            });
+                            ui.add(Slider::new(&mut self.batch_size, 1..=128));
 
                             ui.add_space(10.0);
 
@@ -150,63 +236,21 @@ impl App for NeuroApp {
                             ui.label("Actions");
                             ui.separator();
                             ui.horizontal(|ui| {
-                                ui.button("Recognize");
                                 if ui.button("Learn").clicked() {
-                                    let train_len = 400;
-                                    let mut train_labels: Vec<u8> =
-                                        mnist_read::read_labels("train-labels-idx1-ubyte");
-                                    let mut train_data =
-                                        mnist_read::read_data("train-images-idx3-ubyte")
-                                            .chunks(784)
-                                            .map(|v| v.into())
-                                            .collect::<Vec<Vec<u8>>>();
-                                    train_labels.truncate(train_len);
-                                    train_data.truncate(train_len);
-                                    let examples = train_labels
-                                        .iter()
-                                        .zip(train_data.iter())
-                                        .map(|(label, data)| {
-                                            let mut v: Vec<f32> = vec![0.0; 10];
-                                            v[*label as usize] = 1.0;
-                                            Sample {
-                                                data: data
-                                                    .iter()
-                                                    .map(|x| *x as f32 / 255.0)
-                                                    .collect::<Vec<_>>(),
-                                                solution: v,
-                                            }
-                                        })
-                                        .collect::<Vec<_>>();
-                                    // let examples = vec![
-                                    //     Sample {
-                                    //         data: vec![1.0, 1.0],
-                                    //         solution: vec![0.0],
-                                    //     },
-                                    //     Sample {
-                                    //         data: vec![1.0, 0.0],
-                                    //         solution: vec![1.0],
-                                    //     },
-                                    //     Sample {
-                                    //         data: vec![0.0, 1.0],
-                                    //         solution: vec![1.0],
-                                    //     },
-                                    //     Sample {
-                                    //         data: vec![0.0, 0.0],
-                                    //         solution: vec![0.0],
-                                    //     },
-                                    // ];
-                                    let mut net = neuro::NeuroNetwork::new(vec![784, 32, 32, 16, 10])
-                                        .with_epoch(10000)
-                                        .with_batch_size(1)
-                                        .with_activation(relu, relu_df);
-
-                                    net.train(examples.clone(), 0.1);
-                                    for i in 0..10 {
-                                        let output = net.solve(examples[i].data.clone());
-                                        println!("Label:{:?}\n{:?}", examples[i].solution, output);
+                                    if self.promise.is_none() {
+                                        self.network = None;
+                                        self.promise = Some(
+                                            poll_promise::Promise::<NeuroNetwork>::spawn_thread(
+                                                "Neural network training",
+                                                move || train(),
+                                            ),
+                                        );
                                     }
                                 }
                             });
+                            if self.promise.is_some() {
+                                ui.spinner();
+                            }
                         });
                     CollapsingHeader::new("Ui")
                         .default_open(true)
@@ -220,21 +264,50 @@ impl App for NeuroApp {
             });
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(Layout::left_to_right(Align::TOP), |ui| {
-                egui::Grid::new("some_unique_id")
-                    .spacing(Vec2::new(1., 1.))
-                    .show(ui, |ui| {
-                        for i in 0..8 {
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.end_row();
-                        }
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Input file");
+                        ui.add_visible(
+                            self.watching.is_none(),
+                            egui::Label::new(
+                                egui::RichText::new("Wrong path").color(egui::Color32::RED),
+                            ),
+                        )
                     });
+                    if ui.text_edit_singleline(&mut self.input_file_path).changed() {
+                        match self.watcher.watch(
+                            std::path::Path::new(&self.input_file_path),
+                            RecursiveMode::NonRecursive,
+                        ) {
+                            Ok(_) => {
+                                println!("heelo");
+                                match &self.watching {
+                                    Some(path) => {
+                                        println!("Unwatch: {}", path);
+                                        self.watcher.unwatch(std::path::Path::new(&path))
+                                    }
+                                    None => Ok(()),
+                                }
+                                .unwrap();
+                                self.watching = Some(self.input_file_path.clone());
+                            }
+                            Err(_) => {
+                                match self.watching.clone() {
+                                    Some(path) => {
+                                        println!("Unwatch: {}", path);
+                                        self.watching = None;
+                                        self.watcher.unwatch(std::path::Path::new(&path))
+                                    }
+                                    None => Ok(()),
+                                }
+                                .unwrap();
+                            }
+                        }
+                    }
+                    ui.add_space(6.0);
+                    ui.label("Folder with training data");
+                    ui.text_edit_singleline(&mut self.train_data_folder_path);
+                });
                 ui.add_space(12.0);
                 egui::Grid::new("unique_id_2")
                     .spacing(Vec2::new(1., 1.))
@@ -247,6 +320,17 @@ impl App for NeuroApp {
                     });
             });
         });
+        self.handle_changes();
+        self.promise = match self.promise.take() {
+            Some(p) => match p.try_take() {
+                Ok(value) => {
+                    self.network = Some(value);
+                    None
+                }
+                Err(p) => Some(p),
+            },
+            None => None,
+        }
     }
 }
 
