@@ -1,3 +1,5 @@
+use rand::distributions::{Distribution, Uniform};
+
 #[derive(Debug, PartialEq)]
 pub enum Solution {
     Car,
@@ -5,6 +7,8 @@ pub enum Solution {
     Sheep,
     Airplane,
 }
+
+#[derive(Debug, Clone)]
 pub struct Sample {
     pub data: Vec<f32>,
     pub solution: Vec<f32>,
@@ -28,7 +32,7 @@ impl NeuroLayer {
             raw_input: vec![0.0; neurons_amount],
             input: vec![0.0; neurons_amount],
             output: vec![0.0; neurons_amount],
-            basis: vec![-1.0; neurons_amount],
+            basis: vec![0.001; neurons_amount],
             weights: (0..neurons_amount)
                 .map(|_| {
                     (0..back_links_amount)
@@ -191,6 +195,21 @@ impl NeuroNetwork {
         for i in 1..layers.len() {
             neuro_layers.push(NeuroLayer::new(layers[i], layers[i - 1]));
         }
+        for k in 1..neuro_layers.len() {
+            let fan = (neuro_layers[k].weights.len() as f32 + neuro_layers[k - 1].weights.len() as f32).sqrt();
+            let glorot = 6.0f32.sqrt() / fan;
+            let between = Uniform::from(-glorot..glorot);
+            let mut rng = rand::thread_rng();
+            for i in 0..neuro_layers[k].weights.len() {
+                for j in 0..neuro_layers[k].weights[i].len() {
+                    neuro_layers[k].weights[i][j] = between.sample(&mut rng);
+                }
+                // neuro_layers[k].basis[i] = between.sample(&mut rng);
+            }
+        }
+        for i in 0..neuro_layers[0].basis.len() {
+            // neuro_layers[0].basis[i] = rand::random::<f32>();
+        }
         Self {
             layers: neuro_layers,
             batch_size: 1,
@@ -292,7 +311,7 @@ impl NeuroNetwork {
                 epoch_cost += self.train_step(&batches[j], learning_rate);
             }
             if i % 100 == 0 {
-                println!("Cost: {}", epoch_cost);
+                println!("Cost: {} ({})", epoch_cost, i);
             }
         }
     }

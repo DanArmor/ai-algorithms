@@ -52,6 +52,29 @@ impl NeuroApp {
     }
 }
 
+fn tanh(x: f32) -> f32{
+    x.tanh()
+}
+
+fn tanh_df(x: f32) -> f32 {
+    1.0 - x.tanh().powi(2)
+}
+
+fn relu(x: f32) -> f32 {
+    if x > 0.0 {
+        x
+    } else {
+        0.0
+    }
+}
+fn relu_df(x:f32) -> f32 {
+    if x > 0.0 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
 impl App for NeuroApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         egui::SidePanel::right("right_panel")
@@ -129,39 +152,59 @@ impl App for NeuroApp {
                             ui.horizontal(|ui| {
                                 ui.button("Recognize");
                                 if ui.button("Learn").clicked() {
-                                    let mut net = neuro::NeuroNetwork::new(vec![2, 6, 2])
+                                    let train_len = 400;
+                                    let mut train_labels: Vec<u8> =
+                                        mnist_read::read_labels("train-labels-idx1-ubyte");
+                                    let mut train_data =
+                                        mnist_read::read_data("train-images-idx3-ubyte")
+                                            .chunks(784)
+                                            .map(|v| v.into())
+                                            .collect::<Vec<Vec<u8>>>();
+                                    train_labels.truncate(train_len);
+                                    train_data.truncate(train_len);
+                                    let examples = train_labels
+                                        .iter()
+                                        .zip(train_data.iter())
+                                        .map(|(label, data)| {
+                                            let mut v: Vec<f32> = vec![0.0; 10];
+                                            v[*label as usize] = 1.0;
+                                            Sample {
+                                                data: data
+                                                    .iter()
+                                                    .map(|x| *x as f32 / 255.0)
+                                                    .collect::<Vec<_>>(),
+                                                solution: v,
+                                            }
+                                        })
+                                        .collect::<Vec<_>>();
+                                    // let examples = vec![
+                                    //     Sample {
+                                    //         data: vec![1.0, 1.0],
+                                    //         solution: vec![0.0],
+                                    //     },
+                                    //     Sample {
+                                    //         data: vec![1.0, 0.0],
+                                    //         solution: vec![1.0],
+                                    //     },
+                                    //     Sample {
+                                    //         data: vec![0.0, 1.0],
+                                    //         solution: vec![1.0],
+                                    //     },
+                                    //     Sample {
+                                    //         data: vec![0.0, 0.0],
+                                    //         solution: vec![0.0],
+                                    //     },
+                                    // ];
+                                    let mut net = neuro::NeuroNetwork::new(vec![784, 32, 32, 16, 10])
                                         .with_epoch(10000)
-                                        .with_batch_size(1);
-                                    let examples = vec![
-                                        Sample {
-                                            data: vec![1.0, 1.0],
-                                            solution: vec![1.0, 0.0],
-                                        },
-                                        Sample {
-                                            data: vec![1.0, 0.0],
-                                            solution: vec![0.0, 1.0],
-                                        },
-                                        Sample {
-                                            data: vec![0.0, 1.0],
-                                            solution: vec![0.0, 1.0],
-                                        },
-                                        Sample {
-                                            data: vec![0.0, 0.0],
-                                            solution: vec![1.0, 0.0],
-                                        },
-                                    ];
-                                    net.train(examples, 0.1);
-                                    let output = net.solve(vec![1.0, 1.0]);
-                                    println!("{:?}", output);
+                                        .with_batch_size(1)
+                                        .with_activation(relu, relu_df);
 
-                                    let output = net.solve(vec![1.0, 0.0]);
-                                    println!("{:?}", output);
-
-                                    let output = net.solve(vec![0.0, 1.0]);
-                                    println!("{:?}", output);
-
-                                    let output = net.solve(vec![0.0, 0.0]);
-                                    println!("{:?}", output);
+                                    net.train(examples.clone(), 0.1);
+                                    for i in 0..10 {
+                                        let output = net.solve(examples[i].data.clone());
+                                        println!("Label:{:?}\n{:?}", examples[i].solution, output);
+                                    }
                                 }
                             });
                         });
