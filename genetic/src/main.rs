@@ -1,6 +1,6 @@
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use eframe::{run_native, App, CreationContext};
-use egui::{CollapsingHeader, Color32, Context, ScrollArea, Slider, Ui, Vec2};
+use egui::{CollapsingHeader, Color32, Context, RichText, ScrollArea, Slider, Ui, Vec2};
 use egui_graphs::{Change, ChangeNode, Edge, Graph, GraphView, Node, SettingsInteraction};
 use petgraph::{
     stable_graph::{NodeIndex, StableUnGraph},
@@ -44,11 +44,12 @@ pub struct GeneticApp {
     solution: Option<TSPSolution>,
     population_i: usize,
     chromosome_i: usize,
-    pheromones_k: f32,
     drag_enabled: bool,
     changes_receiver: Receiver<Change>,
     changes_sender: Sender<Change>,
-    show_parents: bool,
+    show_current: bool,
+    show_parent_1: bool,
+    show_parent_2: bool,
 }
 
 fn distance(a: Vec2, b: Vec2) -> f32 {
@@ -66,11 +67,12 @@ impl GeneticApp {
             solution: None,
             population_i: 0,
             chromosome_i: 0,
-            pheromones_k: 1.0,
             drag_enabled: false,
             changes_receiver: changes_receiver,
             changes_sender: changes_sender,
-            show_parents: false,
+            show_current: true,
+            show_parent_1: false,
+            show_parent_2: false,
         };
         for _ in 0..app.genetic_options.nodes_amount {
             app.add_random_node();
@@ -204,6 +206,63 @@ impl GeneticApp {
         self.solution = None;
         self.reset_graph_color();
     }
+    fn color_chromosome(&mut self, chromosome: &TSPChromosome, color: Color32) {
+        for i in 0..self.g.g.node_count() - 1 {
+            let e = self
+                .g
+                .g
+                .edges_connecting(chromosome.travel_list[i], chromosome.travel_list[i + 1])
+                .map(|x| x.id())
+                .collect::<Vec<_>>()[0];
+            let e = self.g.g.edge_weight_mut(e).unwrap();
+            e.clone_from(&e.clone().with_color(color));
+        }
+        let e = self
+            .g
+            .g
+            .edges_connecting(
+                chromosome.travel_list[chromosome.travel_list.len() - 1],
+                chromosome.travel_list[0],
+            )
+            .map(|x| x.id())
+            .collect::<Vec<_>>()[0];
+        let e = self.g.g.edge_weight_mut(e).unwrap();
+        e.clone_from(&e.clone().with_color(color));
+    }
+    fn get_chromosome(&self, population_index: usize, chromosome_index: usize) -> TSPChromosome {
+        let v = &self.solution.as_ref().unwrap().iterations;
+        let iteration = &v[population_index];
+        let chromosome = &index_to_chromosome(iteration, chromosome_index);
+        chromosome.clone()
+    }
+    fn update_parents(&mut self) {
+        let chromosome = self.get_chromosome(self.population_i, self.chromosome_i);
+        match chromosome.chromosome_type.clone() {
+            TSPChromosomeType::Crossover(parent_1, parent_2) => {
+                if self.show_parent_1 {
+                    self.color_chromosome(
+                        &self.get_chromosome(parent_1.population_index, parent_1.chromosome_index),
+                        Color32::from_rgba_unmultiplied(126, 238, 198, 128),
+                    );
+                }
+                if self.show_parent_2 {
+                    self.color_chromosome(
+                        &self.get_chromosome(parent_2.population_index, parent_2.chromosome_index),
+                        Color32::from_rgba_unmultiplied(255, 90, 79, 128),
+                    );
+                }
+            }
+            TSPChromosomeType::Mutation(parent) => {
+                if self.show_parent_1 {
+                    self.color_chromosome(
+                        &self.get_chromosome(parent.population_index, parent.chromosome_index),
+                        Color32::from_rgba_unmultiplied(126, 238, 198, 128),
+                    );
+                }
+            }
+            _ => (),
+        }
+    }
     fn update_graph(&mut self) {
         match &self.solution {
             Some(v) => {
@@ -215,33 +274,15 @@ impl GeneticApp {
                     let node = self.g.g.node_weight_mut(NodeIndex::from(i as u32)).unwrap();
                     node.clone_from(&node.clone().with_color(Color32::from_rgb(85, 24, 93)));
                 }
-                for i in 0..self.g.g.node_count() - 1 {
-                    let e = self
-                        .g
-                        .g
-                        .edges_connecting(chromosome.travel_list[i], chromosome.travel_list[i + 1])
-                        .map(|x| x.id())
-                        .collect::<Vec<_>>()[0];
-                    let e = self.g.g.edge_weight_mut(e).unwrap();
-                    e.clone_from(
-                        &e.clone()
-                            .with_color(Color32::from_rgba_unmultiplied(255, 213, 36, 128)),
+                if self.show_parent_1 || self.show_parent_2 {
+                    self.update_parents();
+                }
+                if self.show_current {
+                    self.color_chromosome(
+                        chromosome,
+                        Color32::from_rgba_unmultiplied(255, 213, 36, 128),
                     );
                 }
-                let e = self
-                    .g
-                    .g
-                    .edges_connecting(
-                        chromosome.travel_list[chromosome.travel_list.len() - 1],
-                        chromosome.travel_list[0],
-                    )
-                    .map(|x| x.id())
-                    .collect::<Vec<_>>()[0];
-                let e = self.g.g.edge_weight_mut(e).unwrap();
-                e.clone_from(
-                    &e.clone()
-                        .with_color(Color32::from_rgba_unmultiplied(255, 213, 36, 128)),
-                );
             }
             None => (),
         }
@@ -338,6 +379,10 @@ impl App for GeneticApp {
                                 Some(solution) => {
                                     let v = &solution.iterations;
                                     let iteration_before = self.population_i;
+                                    let chromosome = index_to_chromosome(
+                                        &v[self.population_i],
+                                        self.chromosome_i,
+                                    );
                                     ui.add(
                                         Slider::new(&mut self.population_i, 0..=(v.len() - 1))
                                             .text("Population(Iteration)"),
@@ -370,12 +415,36 @@ impl App for GeneticApp {
                                     ));
                                     ui.label(format!(
                                         "Current Chromosome path: {}",
-                                        index_to_chromosome(
-                                            &v[self.population_i],
-                                            self.chromosome_i
-                                        )
-                                        .path_length
+                                        chromosome.path_length
                                     ));
+
+                                    match chromosome.chromosome_type {
+                                        TSPChromosomeType::NoHistory => {
+                                            ui.label(RichText::new("No parents(init)").strong());
+                                        }
+                                        TSPChromosomeType::Crossover(parent_1, parent_2) => {
+                                            ui.label(
+                                                RichText::new(format!(
+                                                    "Crossover: C#{}(P#{}) / C#{}(P#{})",
+                                                    parent_1.chromosome_index,
+                                                    parent_1.population_index,
+                                                    parent_2.chromosome_index,
+                                                    parent_2.population_index,
+                                                ))
+                                                .strong(),
+                                            );
+                                        }
+                                        TSPChromosomeType::Mutation(parent) => {
+                                            ui.label(
+                                                RichText::new(format!(
+                                                    "Mutation: C#{}(P#{})",
+                                                    parent.chromosome_index,
+                                                    parent.population_index
+                                                ))
+                                                .strong(),
+                                            );
+                                        }
+                                    }
 
                                     if ui.button("Show best path").clicked() {
                                         self.population_i = solution.best_population_i;
@@ -394,13 +463,26 @@ impl App for GeneticApp {
                                         }
                                     }
                                     if ui
-                                        .checkbox(&mut self.show_parents, "Show parents")
+                                        .checkbox(&mut self.show_parent_1, "Show parent 1")
                                         .changed()
                                     {
                                         self.reset_graph_color();
                                         self.update_graph();
                                     }
-                                    let old_pheromones_k = self.pheromones_k;
+                                    if ui
+                                        .checkbox(&mut self.show_parent_2, "Show parent 2")
+                                        .changed()
+                                    {
+                                        self.reset_graph_color();
+                                        self.update_graph();
+                                    }
+                                    if ui
+                                        .checkbox(&mut self.show_current, "Show current")
+                                        .changed()
+                                    {
+                                        self.reset_graph_color();
+                                        self.update_graph();
+                                    }
                                 }
                                 None => (),
                             }

@@ -7,15 +7,22 @@ use rand::{seq::SliceRandom, Rng};
 use weighted_rand::{builder::NewBuilder, table::WalkerTable};
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TSPParentInfo {
+    pub chromosome_index: usize,
+    pub population_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum TSPChromosomeType {
-    Crossover(usize, usize),
-    Mutation(usize),
+    Crossover(TSPParentInfo, TSPParentInfo),
+    Mutation(TSPParentInfo),
     NoHistory,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TSPChromosome {
     pub index: usize,
+    pub population: usize,
     pub travel_list: Vec<NodeIndex>,
     pub path_length: f32,
     pub edges_dist: Arc<HashMap<NodeIndex, HashMap<NodeIndex, f32>>>,
@@ -37,12 +44,14 @@ fn distance(
 impl TSPChromosome {
     pub fn new(
         index: usize,
+        population: usize,
         travel_list: Vec<NodeIndex>,
         edges_dist: Arc<HashMap<NodeIndex, HashMap<NodeIndex, f32>>>,
     ) -> Self {
         let path_length = distance(&travel_list, edges_dist.clone());
         Self {
             index: index,
+            population: population,
             travel_list: travel_list,
             path_length: path_length,
             edges_dist: edges_dist,
@@ -61,7 +70,7 @@ impl TSPChromosome {
             .into_iter()
             .map(|index| {
                 travel_list.shuffle(&mut rand::thread_rng());
-                TSPChromosome::new(index, travel_list.clone(), edges_dist.clone())
+                TSPChromosome::new(index, 0, travel_list.clone(), edges_dist.clone())
             })
             .collect::<Vec<_>>()
     }
@@ -129,6 +138,10 @@ pub trait Chromosome: Clone + PartialEq {
     fn mutate(&self) -> Self;
     fn crossover(&self, other: &Self) -> (Self, Self);
     fn health(&self) -> f32;
+    fn set_index(&mut self, index: usize);
+    fn get_index(&self) -> usize;
+    fn set_population(&mut self, population: usize);
+    fn get_population(&mut self) -> usize;
 }
 
 impl Chromosome for TSPChromosome {
@@ -136,8 +149,11 @@ impl Chromosome for TSPChromosome {
         let mut mutant = self.clone();
         let first = rand::thread_rng().gen_range(0..mutant.travel_list.len() - 1);
         let second = rand::thread_rng().gen_range(first..mutant.travel_list.len());
-        mutant.travel_list[first..second].shuffle(&mut rand::thread_rng());
-        mutant.chromosome_type = TSPChromosomeType::Mutation(self.index);
+        mutant.travel_list[first..=second].shuffle(&mut rand::thread_rng());
+        mutant.chromosome_type = TSPChromosomeType::Mutation(TSPParentInfo {
+            chromosome_index: self.index,
+            population_index: self.population,
+        });
         mutant.path_length = mutant.health();
         mutant
     }
@@ -153,7 +169,16 @@ impl Chromosome for TSPChromosome {
                 .unwrap();
             offspring_1.travel_list.remove(index_in_offspring_1);
         }
-        offspring_1.chromosome_type = TSPChromosomeType::Crossover(self.index, other.index);
+        offspring_1.chromosome_type = TSPChromosomeType::Crossover(
+            TSPParentInfo {
+                chromosome_index: self.index,
+                population_index: self.population,
+            },
+            TSPParentInfo {
+                chromosome_index: other.index,
+                population_index: other.population,
+            },
+        );
         let mut offspring_2 = offspring_1.clone();
 
         let mut shuffeled_gen = self.travel_list[first..=second].to_vec();
@@ -171,6 +196,18 @@ impl Chromosome for TSPChromosome {
     }
     fn health(&self) -> f32 {
         distance(&self.travel_list, self.edges_dist.clone())
+    }
+    fn set_index(&mut self, index: usize) {
+        self.index = index;
+    }
+    fn get_index(&self) -> usize {
+        self.index
+    }
+    fn set_population(&mut self, population: usize) {
+        self.population = population;
+    }
+    fn get_population(&mut self) -> usize {
+        self.population
     }
 }
 
@@ -218,8 +255,12 @@ pub fn solve<
         weighted_rand::builder::WalkerTableBuilder::new(&[crossover_p, mutation_p]).build();
 
     let population_size = population.len();
-    for i in 0..population_amount {
+    for population_i in 0..population_amount {
         let mut old = population.clone();
+        for i in 0..old.len() {
+            old[i].set_population(population_i);
+            old[i].set_index(i);
+        }
         let old_wa_table = weighted_rand::builder::WalkerTableBuilder::new(
             &old.iter().map(|x| x.health() as u32).collect::<Vec<_>>(),
         )
@@ -238,6 +279,10 @@ pub fn solve<
                     new.push(old[old_wa_table.next_rng(&mut rand::thread_rng())].mutate());
                 }
             }
+        }
+        for i in 0..new.len() {
+            new[i].set_index(i);
+            new[i].set_population(population_i);
         }
         solution.add_iteration(IterationType::new_iter(old.clone(), new.clone()));
         new.append(&mut old);
