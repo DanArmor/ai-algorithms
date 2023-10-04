@@ -1,4 +1,7 @@
+use crate::activation::*;
+use crate::error_func::*;
 use rand::distributions::{Distribution, Uniform};
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq)]
 pub enum Solution {
@@ -7,9 +10,6 @@ pub enum Solution {
     Sheep,
     Airplane,
 }
-
-pub type ActivationFn = fn(Vec<f32>) -> Vec<f32>;
-pub type ErrorFn = fn(f32, f32) -> f32;
 
 #[derive(Debug, Clone)]
 pub struct Sample {
@@ -31,7 +31,11 @@ pub struct NeuroLayer {
 }
 
 impl NeuroLayer {
-    pub fn new(neurons_amount: usize, back_links_amount: usize, activation: Activation) -> Self {
+    pub fn new(
+        neurons_amount: usize,
+        back_links_amount: usize,
+        activation: ActivationFunc,
+    ) -> Self {
         Self {
             raw_input: vec![0.0; neurons_amount],
             input: vec![0.0; neurons_amount],
@@ -47,7 +51,7 @@ impl NeuroLayer {
             grad: vec![0.0; neurons_amount],
             old_grads: vec![],
             old_outputs: vec![],
-            activation,
+            activation: Activation::new(activation),
         }
     }
     pub fn forward(&mut self, input: Vec<f32>) -> Vec<f32> {
@@ -122,80 +126,68 @@ pub struct NeuroNetwork {
     error_function: ErrorFunction,
 }
 
-struct ErrorFunction {
-    f: ErrorFn,
-    df: ErrorFn,
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct NeuroLayerJson {
+    pub basis: Vec<f32>,
+    pub weights: Vec<Vec<f32>>,
+    pub activation: String,
 }
-impl ErrorFunction {
-    pub fn new(f: ErrorFn, df: ErrorFn) -> Self {
-        Self { f: f, df: df }
-    }
-    pub fn f(&self, x: f32, y: f32) -> f32 {
-        (self.f)(x, y)
-    }
-    pub fn df(&self, x: f32, y: f32) -> f32 {
-        (self.df)(x, y)
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct NeuroNetworkJson {
+    pub layers: Vec<NeuroLayerJson>,
+    pub batch_size: usize,
+    pub epoch_amount: usize,
+    pub error_func: String,
+}
+
+pub fn neural_layer_to_json(layer: &NeuroLayer) -> NeuroLayerJson {
+    NeuroLayerJson {
+        basis: layer.basis.clone(),
+        weights: layer.weights.clone(),
+        activation: layer.activation.name.clone(),
     }
 }
 
-impl std::fmt::Debug for ErrorFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Error func")
+pub fn neural_to_json(net: &NeuroNetwork) -> NeuroNetworkJson {
+    NeuroNetworkJson {
+        layers: net.layers.iter().map(|x| neural_layer_to_json(x)).collect(),
+        batch_size: net.batch_size,
+        epoch_amount: net.epoch_amount,
+        error_func: net.error_function.name.clone(),
     }
 }
 
-pub struct Activation {
-    f: ActivationFn,
-    df: ActivationFn,
+fn json_to_layer(j: NeuroLayerJson) -> NeuroLayer {
+    let mut layer = NeuroLayer::new(
+        j.weights.len(),
+        j.weights[0].len(),
+        ActivationFunc::from_str(&j.activation).unwrap(),
+    );
+    layer.weights = j.weights;
+    layer.basis = j.basis;
+    layer
 }
-impl Activation {
-    pub fn new(f: ActivationFn, df: ActivationFn) -> Self {
-        Self { f: f, df: df }
+
+fn json_to_network(j: NeuroNetworkJson) -> NeuroNetwork {
+    let layers = j.layers.into_iter().map(|x| json_to_layer(x)).collect();
+    NeuroNetwork {
+        layers: layers,
+        batch_size: j.batch_size,
+        epoch_amount: j.epoch_amount,
+        error_function: ErrorFunction::new(ErrorFunc::from_str(&j.error_func).unwrap()),
     }
-    pub fn f(&self, v: Vec<f32>) -> Vec<f32> {
-        (self.f)(v)
-    }
-    pub fn df(&self, v: Vec<f32>) -> Vec<f32> {
-        (self.df)(v)
-    }
-}
-
-impl std::fmt::Debug for Activation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Activation func")
-    }
-}
-
-pub fn sigmoid(v: Vec<f32>) -> Vec<f32> {
-    v.into_iter().map(|x| 1.0 / (1.0 + f32::exp(-x))).collect()
-}
-
-pub fn sigmoid_df(v: Vec<f32>) -> Vec<f32> {
-    let t = sigmoid(v);
-    t.into_iter().map(|x| x * (1.0 - x)).collect()
-}
-
-fn simple_err_func(x: f32, y: f32) -> f32 {
-    (x - y).powi(2) / 2.0
-}
-
-fn simple_err_func_df(x: f32, y: f32) -> f32 {
-    x - y
 }
 
 impl NeuroNetwork {
     pub fn new(layers: Vec<usize>) -> NeuroNetwork {
         let mut neuro_layers: Vec<NeuroLayer> = Vec::with_capacity(layers.len());
-        neuro_layers.push(NeuroLayer::new(
-            layers[0],
-            0,
-            Activation::new(sigmoid, sigmoid_df),
-        ));
+        neuro_layers.push(NeuroLayer::new(layers[0], 0, ActivationFunc::Sigmoid));
         for i in 1..layers.len() {
             neuro_layers.push(NeuroLayer::new(
                 layers[i],
                 layers[i - 1],
-                Activation::new(sigmoid, sigmoid_df),
+                ActivationFunc::Sigmoid,
             ));
         }
         for k in 1..neuro_layers.len() {
@@ -212,41 +204,41 @@ impl NeuroNetwork {
                 // neuro_layers[k].basis[i] = between.sample(&mut rng);
             }
         }
-        for i in 0..neuro_layers[0].basis.len() {
-            // neuro_layers[0].basis[i] = rand::random::<f32>();
-        }
+        // for i in 0..neuro_layers[0].basis.len() {
+        // neuro_layers[0].basis[i] = rand::random::<f32>();
+        // }
         Self {
             layers: neuro_layers,
             batch_size: 1,
             epoch_amount: 100,
-            error_function: ErrorFunction::new(simple_err_func, simple_err_func_df),
+            error_function: ErrorFunction::new(ErrorFunc::Simple),
         }
     }
-    pub fn with_activation(self, f: ActivationFn, df: ActivationFn) -> Self {
+    pub fn with_activation(self, activation: ActivationFunc) -> Self {
         Self {
             layers: self
                 .layers
                 .into_iter()
                 .map(|x| NeuroLayer {
-                    activation: Activation::new(f, df),
+                    activation: Activation::new(activation.clone()),
                     ..x
                 })
                 .collect(),
             ..self
         }
     }
-    pub fn with_last_activation(self, f: ActivationFn, df: ActivationFn) -> Self {
+    pub fn with_last_activation(self, activation: ActivationFunc) -> Self {
         let mut new_net = Self {
             layers: self.layers,
             ..self
         };
         let layers_amount = new_net.layers.len();
-        new_net.layers[layers_amount - 1].activation = Activation::new(f, df);
+        new_net.layers[layers_amount - 1].activation = Activation::new(activation);
         new_net
     }
-    pub fn with_error(self, f: ErrorFn, df: ErrorFn) -> Self {
+    pub fn with_error(self, error_func: ErrorFunc) -> Self {
         Self {
-            error_function: ErrorFunction::new(f, df),
+            error_function: ErrorFunction::new(error_func),
             ..self
         }
     }
@@ -342,19 +334,6 @@ pub enum NeuroLayers {
     Zero,
     One,
     Two,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ActivationFunc {
-    Sig,
-    Gip,
-    Arctn,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum LearningMode {
-    OneByOne,
-    Packet,
 }
 
 struct Batch {

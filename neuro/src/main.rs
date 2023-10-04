@@ -20,19 +20,17 @@ use std::{
     time::Duration,
 };
 
+mod activation;
+mod error_func;
 mod neuro;
-mod settings;
 
+use activation::*;
 use neuro::*;
 
 pub struct NeuroApp {
-    g: Graph<(), (), Undirected>,
-    settings_style: settings::SettingsStyle,
-    settings_navigation: settings::SettingsNavigation,
     changes_receiver: Receiver<notify::Event>,
     neuro_layers: NeuroLayers,
     activation_func: ActivationFunc,
-    learning_mode: LearningMode,
     learning_norm: f32,
     amount_epoch: usize,
     batch_size: usize,
@@ -66,13 +64,9 @@ impl NeuroApp {
         )
         .unwrap();
         let mut app = Self {
-            g: Graph::from(&StableUnGraph::default()),
-            settings_style: settings::SettingsStyle::default(),
-            settings_navigation: settings::SettingsNavigation::default(),
             changes_receiver: changes_receiver,
             neuro_layers: NeuroLayers::Zero,
-            activation_func: ActivationFunc::Sig,
-            learning_mode: LearningMode::OneByOne,
+            activation_func: ActivationFunc::Sigmoid,
             learning_norm: 0.5,
             batch_size: 1,
             amount_epoch: 1000,
@@ -131,45 +125,11 @@ fn train() -> NeuroNetwork {
     let mut net = neuro::NeuroNetwork::new(vec![784, 32, 32, 16, 10])
         .with_epoch(3000)
         .with_batch_size(10)
-        .with_activation(relu, relu_df)
-        .with_last_activation(softmax, softmax_df);
+        .with_activation(ActivationFunc::Relu)
+        .with_last_activation(ActivationFunc::Softmax);
 
     net.train(examples.clone(), 0.03);
     net
-}
-
-fn tanh(v: Vec<f32>) -> Vec<f32> {
-    v.into_iter().map(|x| x.tanh()).collect()
-}
-
-fn tanh_df(v: Vec<f32>) -> Vec<f32> {
-    v.into_iter().map(|x| 1.0 - x.tanh().powi(2)).collect()
-}
-
-fn relu(v: Vec<f32>) -> Vec<f32> {
-    v.into_iter()
-        .map(|x| if x > 0.0 { x } else { 0.0 })
-        .collect()
-}
-fn relu_df(v: Vec<f32>) -> Vec<f32> {
-    v.into_iter()
-        .map(|x| if x > 0.0 { 1.0 } else { 0.0 })
-        .collect()
-}
-
-fn softmax(mut v: Vec<f32>) -> Vec<f32> {
-    let max = v.iter().max_by(|x, y| x.total_cmp(y)).unwrap().clone();
-    v = v.into_iter().map(|x| x - max).collect();
-    let sum = v.iter().map(|x| x.exp()).sum::<f32>();
-    if sum == 0.0 {
-        return vec![0.0; v.len()];
-    }
-    v.into_iter().map(|x| x.exp() / sum).collect()
-}
-
-fn softmax_df(v: Vec<f32>) -> Vec<f32> {
-    let t = softmax(v);
-    t.into_iter().map(|x| x * (1.0 - x)).collect()
 }
 
 impl App for NeuroApp {
@@ -198,18 +158,18 @@ impl App for NeuroApp {
                             ui.horizontal(|ui| {
                                 ui.radio_value(
                                     &mut self.activation_func,
-                                    ActivationFunc::Sig,
+                                    ActivationFunc::Sigmoid,
                                     "Sig",
                                 );
                                 ui.radio_value(
                                     &mut self.activation_func,
-                                    ActivationFunc::Gip,
-                                    "Gip",
+                                    ActivationFunc::Relu,
+                                    "Relu",
                                 );
                                 ui.radio_value(
                                     &mut self.activation_func,
-                                    ActivationFunc::Arctn,
-                                    "ArcTg",
+                                    ActivationFunc::Softmax,
+                                    "Softmax",
                                 );
                             });
 
