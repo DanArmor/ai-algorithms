@@ -392,7 +392,6 @@ impl App for NeuroApp {
                             Ok(_) => {
                                 match &self.watching {
                                     Some(path) => {
-                                        println!("Unwatch: {}", path);
                                         self.watcher.unwatch(std::path::Path::new(&path))
                                     }
                                     None => Ok(()),
@@ -403,7 +402,6 @@ impl App for NeuroApp {
                             Err(_) => {
                                 match self.watching.clone() {
                                     Some(path) => {
-                                        println!("Unwatch: {}", path);
                                         self.watching = None;
                                         self.watcher.unwatch(std::path::Path::new(&path))
                                     }

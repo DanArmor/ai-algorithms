@@ -194,7 +194,6 @@ pub fn json_to_network(j: NeuralNetworkJson) -> NeuralNetwork {
 
 impl NeuralNetwork {
     pub fn new(layers: Vec<usize>, labels: Vec<String>) -> NeuralNetwork {
-        println!("{} == {}", layers[layers.len() - 1], labels.len());
         assert!(layers[layers.len() - 1] == labels.len());
         let mut neuro_layers: Vec<NeuralLayer> = Vec::with_capacity(layers.len());
         neuro_layers.push(NeuralLayer::new(layers[0], 0, ActivationFunc::Sigmoid));
