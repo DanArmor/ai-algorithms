@@ -99,7 +99,7 @@ impl GeneticApp {
         let indexes: Vec<_> = self.g.g.node_indices().collect();
         indexes.into_iter().for_each(|x| {
             if x != node {
-                let mut edge_data = EdgeInfo {
+                let edge_data = EdgeInfo {
                     distance: distance(
                         self.g.node(x).unwrap().location(),
                         self.g.node(node).unwrap().location(),
@@ -270,8 +270,8 @@ impl GeneticApp {
                 let iteration = &v[self.population_i];
                 let chromosome = &index_to_chromosome(iteration, self.chromosome_i);
 
-                for i in 0..self.g.g.node_count() {
-                    let node = self.g.g.node_weight_mut(NodeIndex::from(i as u32)).unwrap();
+                for i in self.g.g.node_indices().collect::<Vec<_>>() {
+                    let node = self.g.g.node_weight_mut(i).unwrap();
                     node.clone_from(&node.clone().with_color(Color32::from_rgb(85, 24, 93)));
                 }
                 if self.show_parent_1 || self.show_parent_2 {
@@ -308,27 +308,28 @@ impl GeneticApp {
     }
     fn build_edges_dist(&self) -> Arc<HashMap<NodeIndex, HashMap<NodeIndex, f32>>> {
         let mut dict: HashMap<NodeIndex, HashMap<NodeIndex, f32>> = HashMap::default();
-        for i in 0..self.g.g.node_count() {
-            dict.insert(NodeIndex::from(i as u32), HashMap::default());
+        let indeces = self.g.g.node_indices().collect::<Vec<_>>();
+        for i in &indeces {
+            dict.insert(*i, HashMap::default());
         }
-        for i in 0..self.g.g.node_count() {
-            for j in i + 1..self.g.g.node_count() {
-                let e = self
-                    .g
-                    .g
-                    .edges_connecting(NodeIndex::from(i as u32), NodeIndex::from(j as u32))
-                    .map(|x| x.id())
-                    .collect::<Vec<_>>()[0];
-                let e = self.g.g.edge_weight(e).unwrap();
-                let distance = e.data().unwrap().distance;
-                dict.get_mut(&NodeIndex::from(i as u32))
-                    .unwrap()
-                    .insert(NodeIndex::from(j as u32), distance);
-                dict.get_mut(&NodeIndex::from(j as u32))
-                    .unwrap()
-                    .insert(NodeIndex::from(i as u32), distance);
-            }
-        }
+        indeces
+            .iter()
+            .take(indeces.len() - 1)
+            .enumerate()
+            .for_each(|(i, x)| {
+                for j in &indeces[i + 1..indeces.len()] {
+                    let e = self
+                        .g
+                        .g
+                        .edges_connecting(*x, *j)
+                        .map(|x| x.id())
+                        .collect::<Vec<_>>()[0];
+                    let e = self.g.g.edge_weight(e).unwrap();
+                    let distance = e.data().unwrap().distance;
+                    dict.get_mut(x).unwrap().insert(*j, distance);
+                    dict.get_mut(j).unwrap().insert(*x, distance);
+                }
+            });
         Arc::new(dict)
     }
 }
@@ -366,7 +367,8 @@ impl App for GeneticApp {
                                 let res: TSPSolution = solve(
                                     self.genetic_options.population_amount,
                                     TSPChromosome::generate_random_population(
-                                        self.genetic_options.nodes_amount,
+                                        self.g.g.node_indices().collect(),
+                                        self.genetic_options.population_size,
                                         self.build_edges_dist(),
                                     ),
                                     self.genetic_options.crossover_p,

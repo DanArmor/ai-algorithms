@@ -59,13 +59,11 @@ impl TSPChromosome {
         }
     }
     pub fn generate_random_population(
+        indices: Vec<NodeIndex>,
         population_size: usize,
         edges_dist: Arc<HashMap<NodeIndex, HashMap<NodeIndex, f32>>>,
     ) -> Vec<Self> {
-        let mut travel_list = (0..population_size)
-            .into_iter()
-            .map(|x| NodeIndex::from(x as u32))
-            .collect::<Vec<_>>();
+        let mut travel_list = indices;
         (0..population_size)
             .into_iter()
             .map(|index| {
@@ -264,7 +262,7 @@ pub fn solve<
         let old_wa_table = weighted_rand::builder::WalkerTableBuilder::new(
             &old.iter().map(|x| x.health() as u32).collect::<Vec<_>>(),
         )
-        .build();
+        .build().inverse();
         let mut new: Vec<ChromosomeType> = vec![];
         while new.len() != old.len() {
             let v = wa_table.next_rng(&mut rand::thread_rng());
@@ -289,7 +287,7 @@ pub fn solve<
         let new_wa_table = weighted_rand::builder::WalkerTableBuilder::new(
             &new.iter().map(|x| x.health() as u32).collect::<Vec<_>>(),
         )
-        .build();
+        .build().inverse();
         population.clear();
         for i in 0..population_size {
             population.push(new[pick_for_population(&population, &new, &new_wa_table)].clone());
