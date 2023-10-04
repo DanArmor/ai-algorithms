@@ -55,11 +55,16 @@ pub struct NeuroApp {
 impl NeuroApp {
     fn new(_: &CreationContext<'_>) -> Self {
         let (changes_sender, changes_receiver) = unbounded();
+        let mut now = std::time::SystemTime::now();
+        let duration = std::time::Duration::from_millis(500);
         let mut watcher: RecommendedWatcher = Watcher::new(
             move |result: Result<Event, Error>| match result {
                 Ok(event) => {
                     if event.kind.is_modify() {
-                        changes_sender.send(event);
+                        if now.elapsed().unwrap() > duration {
+                            now = std::time::SystemTime::now();
+                            changes_sender.send(event);
+                        }
                     }
                 }
                 Err(e) => (),
@@ -84,17 +89,17 @@ impl NeuroApp {
             promise: None,
             toasts: egui_notify::Toasts::default(),
             layers_options: vec![LayerOptions { neurons: 1 }; 16],
-            picked_layers: 1,
+            picked_layers: 2,
             solution: None,
             best_solution: None,
         };
         app
     }
     fn handle_changes(&mut self) {
-        if self.network.is_none() {
+        if self.network.is_none() || self.watching.is_none() {
             return;
         }
-        let file_path = &self.input_file_path;
+        let file_path = self.watching.as_ref().unwrap();
         self.changes_receiver.try_iter().for_each(|_| {
             let input = get_file_data(file_path.clone());
             let output = self.network.as_mut().unwrap().solve(input);
@@ -172,9 +177,9 @@ impl App for NeuroApp {
                             ui.add_enabled(self.network.is_none(), |ui: &mut Ui| {
                                 ui.add_space(10.0);
 
-                                ui.label("Amount of hidden layers + output layer");
+                                ui.label("Amount of layers");
                                 ui.separator();
-                                ui.add(Slider::new(&mut self.picked_layers, 1..=16));
+                                ui.add(Slider::new(&mut self.picked_layers, 2..=16));
 
                                 ui.add_space(10.0);
 
@@ -304,6 +309,9 @@ impl App for NeuroApp {
                                                     },
                                                 ));
                                             } else if std::path::Path::new(&path_str).is_file() {
+                                                self.network = None;
+                                                self.best_solution = None;
+                                                self.solution = None;
                                                 let file = std::fs::File::open(
                                                     std::path::Path::new(&path_str),
                                                 )
@@ -311,7 +319,21 @@ impl App for NeuroApp {
                                                 let reader = std::io::BufReader::new(file);
                                                 let net: NeuralNetworkJson =
                                                     serde_json::from_reader(reader).unwrap();
-                                                self.network = Some(json_to_network(net));
+                                                let net = json_to_network(net);
+                                                self.picked_layers = net.layers.len();
+                                                self.layers_options
+                                                    .iter_mut()
+                                                    .take(self.picked_layers)
+                                                    .zip(net.layers.iter().take(self.picked_layers))
+                                                    .for_each(|(opt, layer)| {
+                                                        opt.neurons = layer.neurons();
+                                                    });
+                                                self.amount_epoch = net.epoch();
+                                                self.batch_size = net.batch_size();
+                                                self.learning_norm = net.learning_rate();
+                                                self.layers_activation = net.activation();
+                                                self.final_activation = net.final_activation();
+                                                self.network = Some(net);
                                             }
                                         }
                                     }
@@ -391,9 +413,7 @@ impl App for NeuroApp {
                         ) {
                             Ok(_) => {
                                 match &self.watching {
-                                    Some(path) => {
-                                        self.watcher.unwatch(std::path::Path::new(&path))
-                                    }
+                                    Some(path) => self.watcher.unwatch(std::path::Path::new(&path)),
                                     None => Ok(()),
                                 }
                                 .unwrap();
@@ -428,9 +448,7 @@ impl App for NeuroApp {
                                             RichText::new(labels[i].clone()).color(Color32::GREEN),
                                         );
                                     } else {
-                                        ui.label(
-                                            RichText::new(labels[i].clone()),
-                                        );
+                                        ui.label(RichText::new(labels[i].clone()));
                                     }
                                     ui.label(format!("{}", output[i]));
                                     ui.end_row();

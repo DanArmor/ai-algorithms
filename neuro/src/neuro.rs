@@ -133,7 +133,8 @@ pub struct NeuralNetwork {
     batch_size: usize,
     epoch_amount: usize,
     error_function: ErrorFunction,
-    labels: Vec<String>
+    labels: Vec<String>,
+    learning_rate: f32,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -149,7 +150,8 @@ pub struct NeuralNetworkJson {
     pub batch_size: usize,
     pub epoch_amount: usize,
     pub error_func: String,
-    pub labels: Vec<String>
+    pub labels: Vec<String>,
+    pub learning_rate: f32,
 }
 
 pub fn neural_layer_to_json(layer: &NeuralLayer) -> NeuralLayerJson {
@@ -165,8 +167,9 @@ pub fn neural_to_json(net: &NeuralNetwork) -> NeuralNetworkJson {
         layers: net.layers.iter().map(|x| neural_layer_to_json(x)).collect(),
         batch_size: net.batch_size,
         epoch_amount: net.epoch_amount,
+        learning_rate: net.learning_rate,
         error_func: net.error_function.name.clone(),
-        labels: net.labels.clone()
+        labels: net.labels.clone(),
     }
 }
 
@@ -187,8 +190,9 @@ pub fn json_to_network(j: NeuralNetworkJson) -> NeuralNetwork {
         layers: layers,
         batch_size: j.batch_size,
         epoch_amount: j.epoch_amount,
+        learning_rate: j.learning_rate,
         error_function: ErrorFunction::new(ErrorFunc::from_str(&j.error_func).unwrap()),
-        labels: j.labels
+        labels: j.labels,
     }
 }
 
@@ -215,18 +219,15 @@ impl NeuralNetwork {
                 for j in 0..neuro_layers[k].weights[i].len() {
                     neuro_layers[k].weights[i][j] = between.sample(&mut rng);
                 }
-                // neuro_layers[k].basis[i] = between.sample(&mut rng);
             }
         }
-        // for i in 0..neuro_layers[0].basis.len() {
-        // neuro_layers[0].basis[i] = rand::random::<f32>();
-        // }
         Self {
             layers: neuro_layers,
             batch_size: 1,
             epoch_amount: 100,
             error_function: ErrorFunction::new(ErrorFunc::Simple),
-            labels: labels
+            labels: labels,
+            learning_rate: 0.1,
         }
     }
     pub fn labels(&self) -> Vec<String> {
@@ -320,6 +321,7 @@ impl NeuralNetwork {
         self.layers[0].correct(vec![], learning_rate);
     }
     pub fn train(&mut self, data: Vec<Sample>, learning_rate: f32) {
+        self.learning_rate = learning_rate;
         let mut batches: Vec<Batch> = data
             .chunks(self.batch_size)
             .map(|samples| Batch::new(samples.into()))
@@ -344,6 +346,21 @@ impl NeuralNetwork {
         let output = self.layers.last().unwrap().output.clone();
         self.clear_layers();
         output
+    }
+    pub fn epoch(&self) -> usize {
+        self.epoch_amount
+    }
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+    pub fn learning_rate(&self) -> f32 {
+        self.learning_rate
+    }
+    pub fn activation(&self) -> ActivationFunc {
+        ActivationFunc::from_str(&self.layers[0].activation.name).unwrap()
+    }
+    pub fn final_activation(&self) -> ActivationFunc {
+        ActivationFunc::from_str(&self.layers[self.layers.len() - 1].activation.name).unwrap()
     }
 }
 
