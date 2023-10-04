@@ -133,6 +133,7 @@ pub struct NeuroNetwork {
     batch_size: usize,
     epoch_amount: usize,
     error_function: ErrorFunction,
+    labels: Vec<String>
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -148,6 +149,7 @@ pub struct NeuroNetworkJson {
     pub batch_size: usize,
     pub epoch_amount: usize,
     pub error_func: String,
+    pub labels: Vec<String>
 }
 
 pub fn neural_layer_to_json(layer: &NeuroLayer) -> NeuroLayerJson {
@@ -164,6 +166,7 @@ pub fn neural_to_json(net: &NeuroNetwork) -> NeuroNetworkJson {
         batch_size: net.batch_size,
         epoch_amount: net.epoch_amount,
         error_func: net.error_function.name.clone(),
+        labels: net.labels.clone()
     }
 }
 
@@ -185,11 +188,14 @@ pub fn json_to_network(j: NeuroNetworkJson) -> NeuroNetwork {
         batch_size: j.batch_size,
         epoch_amount: j.epoch_amount,
         error_function: ErrorFunction::new(ErrorFunc::from_str(&j.error_func).unwrap()),
+        labels: j.labels
     }
 }
 
 impl NeuroNetwork {
-    pub fn new(layers: Vec<usize>) -> NeuroNetwork {
+    pub fn new(layers: Vec<usize>, labels: Vec<String>) -> NeuroNetwork {
+        println!("{} == {}", layers[layers.len() - 1], labels.len());
+        assert!(layers[layers.len() - 1] == labels.len());
         let mut neuro_layers: Vec<NeuroLayer> = Vec::with_capacity(layers.len());
         neuro_layers.push(NeuroLayer::new(layers[0], 0, ActivationFunc::Sigmoid));
         for i in 1..layers.len() {
@@ -221,7 +227,11 @@ impl NeuroNetwork {
             batch_size: 1,
             epoch_amount: 100,
             error_function: ErrorFunction::new(ErrorFunc::Simple),
+            labels: labels
         }
+    }
+    pub fn labels(&self) -> Vec<String> {
+        self.labels.clone()
     }
     pub fn with_activation(self, activation: ActivationFunc) -> Self {
         Self {

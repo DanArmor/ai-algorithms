@@ -2,7 +2,7 @@ use crossbeam::channel::{unbounded, Receiver};
 use eframe::{
     egui::{
         Align, CentralPanel, CollapsingHeader, Color32, Context, Grid, Label, Layout, RichText,
-        ScrollArea, SidePanel, Slider, Vec2,
+        ScrollArea, SidePanel, Slider, Ui, Vec2,
     },
     run_native, App, CreationContext,
 };
@@ -19,24 +19,37 @@ mod neuro;
 use activation::*;
 use neuro::*;
 
+#[derive(Debug, Clone)]
 struct LayerOptions {
     neurons: usize,
 }
 
 pub struct NeuroApp {
+    // Changes
     changes_receiver: Receiver<notify::Event>,
-    neuro_layers: NeuroLayers,
-    activation_func: ActivationFunc,
+    layers_activation: ActivationFunc,
+    final_activation: ActivationFunc,
     learning_norm: f32,
     amount_epoch: usize,
     batch_size: usize,
+    // Path to input file
     input_file_path: String,
+    // Path to training data or json-network
     train_data_folder_path: String,
+    // Neural network
     network: Option<neuro::NeuroNetwork>,
+    solution: Option<Vec<f32>>,
+    best_solution: Option<usize>,
+    // Input file watch
     watcher: RecommendedWatcher,
     watching: Option<String>,
+    // Promise for training function
     promise: Option<poll_promise::Promise<NeuroNetwork>>,
+    // Notifications
     toasts: egui_notify::Toasts,
+    // Layers Options
+    picked_layers: usize,
+    layers_options: Vec<LayerOptions>,
 }
 
 impl NeuroApp {
@@ -58,8 +71,8 @@ impl NeuroApp {
         .unwrap();
         let mut app = Self {
             changes_receiver: changes_receiver,
-            neuro_layers: NeuroLayers::Zero,
-            activation_func: ActivationFunc::Sigmoid,
+            layers_activation: ActivationFunc::Sigmoid,
+            final_activation: ActivationFunc::Sigmoid,
             learning_norm: 0.5,
             batch_size: 1,
             amount_epoch: 1000,
@@ -70,6 +83,10 @@ impl NeuroApp {
             watching: None,
             promise: None,
             toasts: egui_notify::Toasts::default(),
+            layers_options: vec![LayerOptions { neurons: 1 }; 16],
+            picked_layers: 1,
+            solution: None,
+            best_solution: None,
         };
         app
     }
@@ -81,7 +98,14 @@ impl NeuroApp {
         self.changes_receiver.try_iter().for_each(|_| {
             let input = get_file_data(file_path.clone());
             let output = self.network.as_mut().unwrap().solve(input);
-            println!("R: {:#?}", output);
+            let best_solution = output
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                .map(|(index, _)| index)
+                .unwrap();
+            self.solution = Some(output);
+            self.best_solution = Some(best_solution);
         });
     }
 }
@@ -95,34 +119,44 @@ fn get_file_data(file_path: String) -> Vec<f32> {
     input
 }
 
-fn train() -> NeuroNetwork {
-    let train_len = 100;
-    let mut train_labels: Vec<u8> = mnist_read::read_labels("train-labels-idx1-ubyte");
-    let mut train_data = mnist_read::read_data("train-images-idx3-ubyte")
-        .chunks(784)
-        .map(|v| v.into())
-        .collect::<Vec<Vec<u8>>>();
-    train_labels.truncate(train_len);
-    train_data.truncate(train_len);
-    let examples = train_labels
-        .iter()
-        .zip(train_data.iter())
-        .map(|(label, data)| {
-            let mut v: Vec<f32> = vec![0.0; 10];
-            v[*label as usize] = 1.0;
+fn train(
+    path: &std::path::Path,
+    layers_activation: ActivationFunc,
+    final_activation: ActivationFunc,
+    layers_options: Vec<usize>,
+    epoch: usize,
+    batch_size: usize,
+    learning_rate: f32,
+) -> NeuroNetwork {
+    let file = std::fs::File::open(path.join(std::path::Path::new("train.json"))).unwrap();
+    let reader = std::io::BufReader::new(file);
+    let labels: Vec<String> = serde_json::from_reader(reader).unwrap();
+    let samples: Vec<Sample> = std::fs::read_dir(path)
+        .unwrap()
+        .map(|x| x.unwrap())
+        .filter(|x| {
+            let name = String::from(x.file_name().to_str().unwrap());
+            !name.ends_with(".json")
+        })
+        .map(|x| {
+            let name = String::from(x.file_name().to_str().unwrap());
+            let label = name.chars().take_while(|&x| x != '_').collect::<String>();
+            let inputs = get_file_data(String::from(x.path().to_str().unwrap()));
+            let mut output: Vec<f32> = vec![0.0; labels.len()];
+            output[labels.iter().position(|x| *x == label).unwrap()] = 1.0;
             Sample {
-                data: data.iter().map(|x| *x as f32 / 255.0).collect::<Vec<_>>(),
-                solution: v,
+                data: inputs,
+                solution: output,
             }
         })
-        .collect::<Vec<_>>();
-    let mut net = neuro::NeuroNetwork::new(vec![784, 32, 32, 16, 10])
-        .with_epoch(200)
-        .with_batch_size(10)
-        .with_activation(ActivationFunc::Relu)
-        .with_last_activation(ActivationFunc::Softmax);
+        .collect();
+    let mut net = neuro::NeuroNetwork::new(layers_options, labels)
+        .with_activation(layers_activation)
+        .with_last_activation(final_activation)
+        .with_epoch(epoch)
+        .with_batch_size(batch_size);
 
-    net.train(examples.clone(), 0.03);
+    net.train(samples, learning_rate);
     net
 }
 
@@ -135,76 +169,145 @@ impl App for NeuroApp {
                     CollapsingHeader::new("Neuro Network")
                         .default_open(true)
                         .show(ui, |ui| {
-                            ui.add_space(10.0);
+                            ui.add_enabled(self.network.is_none(), |ui: &mut Ui| {
+                                ui.add_space(10.0);
 
-                            ui.label("Amount of hidden layers");
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.radio_value(&mut self.neuro_layers, NeuroLayers::Zero, "0");
-                                ui.radio_value(&mut self.neuro_layers, NeuroLayers::One, "1");
-                                ui.radio_value(&mut self.neuro_layers, NeuroLayers::Two, "2");
+                                ui.label("Amount of hidden layers + output layer");
+                                ui.separator();
+                                ui.add(Slider::new(&mut self.picked_layers, 1..=16));
+
+                                ui.add_space(10.0);
+
+                                ui.label("Activation function");
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.radio_value(
+                                        &mut self.layers_activation,
+                                        ActivationFunc::Sigmoid,
+                                        "Sig",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.layers_activation,
+                                        ActivationFunc::Relu,
+                                        "Relu",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.layers_activation,
+                                        ActivationFunc::Softmax,
+                                        "Softmax",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.layers_activation,
+                                        ActivationFunc::Arctan,
+                                        "Atan",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.layers_activation,
+                                        ActivationFunc::Tanh,
+                                        "Tanh",
+                                    );
+                                });
+
+                                ui.add_space(10.0);
+
+                                ui.label("Final activation function");
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.radio_value(
+                                        &mut self.final_activation,
+                                        ActivationFunc::Sigmoid,
+                                        "Sig",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.final_activation,
+                                        ActivationFunc::Relu,
+                                        "Relu",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.final_activation,
+                                        ActivationFunc::Softmax,
+                                        "Softmax",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.final_activation,
+                                        ActivationFunc::Arctan,
+                                        "Atan",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.final_activation,
+                                        ActivationFunc::Tanh,
+                                        "Tanh",
+                                    );
+                                });
+
+                                ui.add_space(10.0);
+
+                                ui.label("Batch size");
+                                ui.separator();
+                                ui.add(Slider::new(&mut self.batch_size, 1..=128));
+
+                                ui.add_space(10.0);
+
+                                ui.label("Learning norm");
+                                ui.separator();
+                                ui.add(Slider::new(&mut self.learning_norm, 0. ..=1.));
+
+                                ui.add_space(10.0);
+
+                                ui.label("Amount of epoch");
+                                ui.separator();
+                                let r = ui.add(Slider::new(&mut self.amount_epoch, 1..=50000));
+
+                                ui.add_space(10.0);
+                                r
                             });
-
-                            ui.add_space(10.0);
-
-                            ui.label("Activation function");
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.radio_value(
-                                    &mut self.activation_func,
-                                    ActivationFunc::Sigmoid,
-                                    "Sig",
-                                );
-                                ui.radio_value(
-                                    &mut self.activation_func,
-                                    ActivationFunc::Relu,
-                                    "Relu",
-                                );
-                                ui.radio_value(
-                                    &mut self.activation_func,
-                                    ActivationFunc::Softmax,
-                                    "Softmax",
-                                );
-                            });
-
-                            ui.add_space(10.0);
-
-                            ui.label("Batch size");
-                            ui.separator();
-                            ui.add(Slider::new(&mut self.batch_size, 1..=128));
-
-                            ui.add_space(10.0);
-
-                            ui.label("Learning norm");
-                            ui.separator();
-                            ui.add(Slider::new(&mut self.learning_norm, 0. ..=1.));
-
-                            ui.add_space(10.0);
-
-                            ui.label("Amount of epoch");
-                            ui.separator();
-                            ui.add(Slider::new(&mut self.amount_epoch, 1..=4000));
-
-                            ui.add_space(10.0);
 
                             ui.label("Actions");
                             ui.separator();
                             ui.horizontal(|ui| {
                                 if ui.button("Learn").clicked() {
                                     if self.promise.is_none() {
-                                        let path =
-                                            std::path::Path::new(&self.train_data_folder_path);
-                                        if path.exists() {
-                                            if path.is_dir() {
+                                        let path_str = self.train_data_folder_path.clone();
+                                        if std::path::Path::new(&path_str).exists() {
+                                            if std::path::Path::new(&path_str).is_dir() {
                                                 self.network = None;
+                                                self.best_solution = None;
+                                                self.solution = None;
+                                                let layers_activation =
+                                                    self.layers_activation.clone();
+                                                let final_activation =
+                                                    self.final_activation.clone();
+                                                let layers_options = self
+                                                    .layers_options
+                                                    .clone()
+                                                    .into_iter()
+                                                    .take(self.picked_layers)
+                                                    .map(|x| x.neurons)
+                                                    .collect();
+                                                let amount_epoch = self.amount_epoch.clone();
+                                                let batch_size = self.batch_size.clone();
+                                                let learning_norm = self.learning_norm.clone();
                                                 self.promise = Some(poll_promise::Promise::<
                                                     NeuroNetwork,
                                                 >::spawn_thread(
                                                     "Neural network training",
-                                                    move || train(),
+                                                    move || {
+                                                        train(
+                                                            std::path::Path::new(&path_str),
+                                                            layers_activation,
+                                                            final_activation,
+                                                            layers_options,
+                                                            amount_epoch,
+                                                            batch_size,
+                                                            learning_norm,
+                                                        )
+                                                    },
                                                 ));
-                                            } else if path.is_file() {
-                                                let file = std::fs::File::open(path).unwrap();
+                                            } else if std::path::Path::new(&path_str).is_file() {
+                                                let file = std::fs::File::open(
+                                                    std::path::Path::new(&path_str),
+                                                )
+                                                .unwrap();
                                                 let reader = std::io::BufReader::new(file);
                                                 let net: NeuroNetworkJson =
                                                     serde_json::from_reader(reader).unwrap();
@@ -213,18 +316,61 @@ impl App for NeuroApp {
                                         }
                                     }
                                 }
+                                if ui.button("Drop").clicked() {
+                                    if self.promise.is_none() {
+                                        self.train_data_folder_path = "".into();
+                                        self.network = None;
+                                        self.best_solution = None;
+                                        self.solution = None;
+                                    }
+                                }
+                                if ui.button("Save").clicked() {
+                                    if self.promise.is_none() {
+                                        let path =
+                                            std::path::Path::new(&self.train_data_folder_path);
+                                        if !path.exists() || !path.is_dir() {
+                                            let j = neural_to_json(self.network.as_ref().unwrap());
+                                            std::fs::write(
+                                                path,
+                                                serde_json::to_string(&j).unwrap(),
+                                            )
+                                            .unwrap();
+                                            self.train_data_folder_path = "".into();
+                                            self.network = None;
+                                            self.best_solution = None;
+                                            self.solution = None;
+                                        }
+                                    }
+                                }
                             });
                             if self.promise.is_some() {
                                 ui.spinner();
                             }
                         });
-                    CollapsingHeader::new("Ui")
+                    CollapsingHeader::new("Layers settings")
                         .default_open(true)
                         .show(ui, |ui| {
-                            ui.add_space(10.0);
+                            ui.add_enabled(self.network.is_none(), |ui: &mut Ui| {
+                                ui.add_space(10.0);
 
-                            ui.label("Ui settings");
-                            ui.separator();
+                                ui.label(format!("Layer {}", 1));
+                                ui.separator();
+                                let r = ui.add(Slider::new(
+                                    &mut self.layers_options[0].neurons,
+                                    1..=3000,
+                                ));
+                                for i in 1..self.picked_layers {
+                                    ui.add_space(10.0);
+
+                                    let r = ui.label(format!("Layer {}", i + 1));
+                                    ui.separator();
+                                    ui.add(Slider::new(
+                                        &mut self.layers_options[i].neurons,
+                                        1..=3000,
+                                    ));
+                                }
+                                r
+                            });
                         });
                 });
             });
@@ -268,19 +414,33 @@ impl App for NeuroApp {
                         }
                     }
                     ui.add_space(6.0);
-                    ui.label("Folder with training data");
+                    ui.label("Training data load/save path");
                     ui.text_edit_singleline(&mut self.train_data_folder_path);
                 });
                 ui.add_space(12.0);
-                Grid::new("unique_id_2")
-                    .spacing(Vec2::new(1., 1.))
-                    .show(ui, |ui| {
-                        for i in 0..8 {
-                            ui.button("  ");
-                            ui.button("  ");
-                            ui.end_row();
-                        }
-                    });
+                match self.solution.clone() {
+                    Some(output) => {
+                        let labels = &self.network.as_ref().unwrap().labels();
+                        Grid::new("unique_id_2")
+                            .spacing(Vec2::new(1., 1.))
+                            .show(ui, |ui| {
+                                for i in 0..output.len() {
+                                    if i == self.best_solution.unwrap() {
+                                        ui.label(
+                                            RichText::new(labels[i].clone()).color(Color32::GREEN),
+                                        );
+                                    } else {
+                                        ui.label(
+                                            RichText::new(labels[i].clone()),
+                                        );
+                                    }
+                                    ui.label(format!("{}", output[i]));
+                                    ui.end_row();
+                                }
+                            });
+                    }
+                    None => (),
+                }
             });
             self.toasts.show(ctx);
         });

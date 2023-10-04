@@ -6,6 +6,7 @@ pub enum ActivationFunc {
     Tanh,
     Softmax,
     Relu,
+    Arctan
 }
 
 impl FromStr for ActivationFunc {
@@ -16,6 +17,7 @@ impl FromStr for ActivationFunc {
             "tanh" => Ok(Self::Tanh),
             "softmax" => Ok(Self::Softmax),
             "relu" => Ok(Self::Relu),
+            "arctan" => Ok(Self::Arctan),
             _ => Err(()),
         }
     }
@@ -28,6 +30,7 @@ impl ActivationFunc {
             Self::Relu => "relu".into(),
             Self::Softmax => "softmax".into(),
             Self::Tanh => "tanh".into(),
+            Self::Arctan => "arctan".into()
         }
     }
     fn f(&self) -> ActivationFn {
@@ -36,6 +39,7 @@ impl ActivationFunc {
             Self::Relu => relu,
             Self::Softmax => softmax,
             Self::Tanh => tanh,
+            Self::Arctan => arctan
         }
     }
     fn df(&self) -> ActivationFn {
@@ -44,6 +48,7 @@ impl ActivationFunc {
             Self::Relu => relu_df,
             Self::Softmax => softmax_df,
             Self::Tanh => tanh_df,
+            Self::Arctan => arctan_df
         }
     }
 }
@@ -92,6 +97,14 @@ pub fn tanh(v: Vec<f32>) -> Vec<f32> {
 
 pub fn tanh_df(v: Vec<f32>) -> Vec<f32> {
     v.into_iter().map(|x| 1.0 - x.tanh().powi(2)).collect()
+}
+
+pub fn arctan(v: Vec<f32>) -> Vec<f32> {
+    v.into_iter().map(|x| x.atan()).collect()
+}
+
+pub fn arctan_df(v: Vec<f32>) -> Vec<f32> {
+    v.into_iter().map(|x| 1.0 / (1.0 + x.powi(2))).collect()
 }
 
 pub fn relu(v: Vec<f32>) -> Vec<f32> {
