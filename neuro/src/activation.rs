@@ -6,7 +6,7 @@ pub enum ActivationFunc {
     Tanh,
     Softmax,
     Relu,
-    Arctan
+    Arctan,
 }
 
 impl FromStr for ActivationFunc {
@@ -30,7 +30,7 @@ impl ActivationFunc {
             Self::Relu => "relu".into(),
             Self::Softmax => "softmax".into(),
             Self::Tanh => "tanh".into(),
-            Self::Arctan => "arctan".into()
+            Self::Arctan => "arctan".into(),
         }
     }
     fn f(&self) -> ActivationFn {
@@ -39,7 +39,7 @@ impl ActivationFunc {
             Self::Relu => relu,
             Self::Softmax => softmax,
             Self::Tanh => tanh,
-            Self::Arctan => arctan
+            Self::Arctan => arctan,
         }
     }
     fn df(&self) -> ActivationFn {
@@ -48,7 +48,7 @@ impl ActivationFunc {
             Self::Relu => relu_df,
             Self::Softmax => softmax_df,
             Self::Tanh => tanh_df,
-            Self::Arctan => arctan_df
+            Self::Arctan => arctan_df,
         }
     }
 }
