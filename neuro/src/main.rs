@@ -37,14 +37,14 @@ pub struct NeuroApp {
     // Path to training data or json-network
     train_data_folder_path: String,
     // Neural network
-    network: Option<neuro::NeuroNetwork>,
+    network: Option<neuro::NeuralNetwork>,
     solution: Option<Vec<f32>>,
     best_solution: Option<usize>,
     // Input file watch
     watcher: RecommendedWatcher,
     watching: Option<String>,
     // Promise for training function
-    promise: Option<poll_promise::Promise<NeuroNetwork>>,
+    promise: Option<poll_promise::Promise<NeuralNetwork>>,
     // Notifications
     toasts: egui_notify::Toasts,
     // Layers Options
@@ -127,7 +127,7 @@ fn train(
     epoch: usize,
     batch_size: usize,
     learning_rate: f32,
-) -> NeuroNetwork {
+) -> NeuralNetwork {
     let file = std::fs::File::open(path.join(std::path::Path::new("train.json"))).unwrap();
     let reader = std::io::BufReader::new(file);
     let labels: Vec<String> = serde_json::from_reader(reader).unwrap();
@@ -150,7 +150,7 @@ fn train(
             }
         })
         .collect();
-    let mut net = neuro::NeuroNetwork::new(layers_options, labels)
+    let mut net = neuro::NeuralNetwork::new(layers_options, labels)
         .with_activation(layers_activation)
         .with_last_activation(final_activation)
         .with_epoch(epoch)
@@ -288,7 +288,7 @@ impl App for NeuroApp {
                                                 let batch_size = self.batch_size.clone();
                                                 let learning_norm = self.learning_norm.clone();
                                                 self.promise = Some(poll_promise::Promise::<
-                                                    NeuroNetwork,
+                                                    NeuralNetwork,
                                                 >::spawn_thread(
                                                     "Neural network training",
                                                     move || {
@@ -309,7 +309,7 @@ impl App for NeuroApp {
                                                 )
                                                 .unwrap();
                                                 let reader = std::io::BufReader::new(file);
-                                                let net: NeuroNetworkJson =
+                                                let net: NeuralNetworkJson =
                                                     serde_json::from_reader(reader).unwrap();
                                                 self.network = Some(json_to_network(net));
                                             }

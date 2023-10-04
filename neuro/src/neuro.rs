@@ -18,7 +18,7 @@ pub struct Sample {
 }
 
 #[derive(Debug)]
-pub struct NeuroLayer {
+pub struct NeuralLayer {
     raw_input: Vec<f32>,
     input: Vec<f32>,
     output: Vec<f32>,
@@ -30,7 +30,7 @@ pub struct NeuroLayer {
     pub activation: Activation,
 }
 
-impl NeuroLayer {
+impl NeuralLayer {
     pub fn new(
         neurons_amount: usize,
         back_links_amount: usize,
@@ -128,8 +128,8 @@ impl NeuroLayer {
 }
 
 #[derive(Debug)]
-pub struct NeuroNetwork {
-    pub layers: Vec<NeuroLayer>,
+pub struct NeuralNetwork {
+    pub layers: Vec<NeuralLayer>,
     batch_size: usize,
     epoch_amount: usize,
     error_function: ErrorFunction,
@@ -137,31 +137,31 @@ pub struct NeuroNetwork {
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct NeuroLayerJson {
+pub struct NeuralLayerJson {
     pub basis: Vec<f32>,
     pub weights: Vec<Vec<f32>>,
     pub activation: String,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct NeuroNetworkJson {
-    pub layers: Vec<NeuroLayerJson>,
+pub struct NeuralNetworkJson {
+    pub layers: Vec<NeuralLayerJson>,
     pub batch_size: usize,
     pub epoch_amount: usize,
     pub error_func: String,
     pub labels: Vec<String>
 }
 
-pub fn neural_layer_to_json(layer: &NeuroLayer) -> NeuroLayerJson {
-    NeuroLayerJson {
+pub fn neural_layer_to_json(layer: &NeuralLayer) -> NeuralLayerJson {
+    NeuralLayerJson {
         basis: layer.basis.clone(),
         weights: layer.weights.clone(),
         activation: layer.activation.name.clone(),
     }
 }
 
-pub fn neural_to_json(net: &NeuroNetwork) -> NeuroNetworkJson {
-    NeuroNetworkJson {
+pub fn neural_to_json(net: &NeuralNetwork) -> NeuralNetworkJson {
+    NeuralNetworkJson {
         layers: net.layers.iter().map(|x| neural_layer_to_json(x)).collect(),
         batch_size: net.batch_size,
         epoch_amount: net.epoch_amount,
@@ -170,8 +170,8 @@ pub fn neural_to_json(net: &NeuroNetwork) -> NeuroNetworkJson {
     }
 }
 
-fn json_to_layer(j: NeuroLayerJson) -> NeuroLayer {
-    let mut layer = NeuroLayer::new(
+fn json_to_layer(j: NeuralLayerJson) -> NeuralLayer {
+    let mut layer = NeuralLayer::new(
         j.weights.len(),
         j.weights[0].len(),
         ActivationFunc::from_str(&j.activation).unwrap(),
@@ -181,9 +181,9 @@ fn json_to_layer(j: NeuroLayerJson) -> NeuroLayer {
     layer
 }
 
-pub fn json_to_network(j: NeuroNetworkJson) -> NeuroNetwork {
+pub fn json_to_network(j: NeuralNetworkJson) -> NeuralNetwork {
     let layers = j.layers.into_iter().map(|x| json_to_layer(x)).collect();
-    NeuroNetwork {
+    NeuralNetwork {
         layers: layers,
         batch_size: j.batch_size,
         epoch_amount: j.epoch_amount,
@@ -192,14 +192,14 @@ pub fn json_to_network(j: NeuroNetworkJson) -> NeuroNetwork {
     }
 }
 
-impl NeuroNetwork {
-    pub fn new(layers: Vec<usize>, labels: Vec<String>) -> NeuroNetwork {
+impl NeuralNetwork {
+    pub fn new(layers: Vec<usize>, labels: Vec<String>) -> NeuralNetwork {
         println!("{} == {}", layers[layers.len() - 1], labels.len());
         assert!(layers[layers.len() - 1] == labels.len());
-        let mut neuro_layers: Vec<NeuroLayer> = Vec::with_capacity(layers.len());
-        neuro_layers.push(NeuroLayer::new(layers[0], 0, ActivationFunc::Sigmoid));
+        let mut neuro_layers: Vec<NeuralLayer> = Vec::with_capacity(layers.len());
+        neuro_layers.push(NeuralLayer::new(layers[0], 0, ActivationFunc::Sigmoid));
         for i in 1..layers.len() {
-            neuro_layers.push(NeuroLayer::new(
+            neuro_layers.push(NeuralLayer::new(
                 layers[i],
                 layers[i - 1],
                 ActivationFunc::Sigmoid,
@@ -238,7 +238,7 @@ impl NeuroNetwork {
             layers: self
                 .layers
                 .into_iter()
-                .map(|x| NeuroLayer {
+                .map(|x| NeuralLayer {
                     activation: Activation::new(activation.clone()),
                     ..x
                 })
