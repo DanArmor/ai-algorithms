@@ -1,24 +1,16 @@
-use crossbeam::channel::{unbounded, Receiver, Sender};
-use eframe::{run_native, App, CreationContext};
-use egui::{Align, CollapsingHeader, Color32, Context, Layout, ScrollArea, Slider, Ui, Vec2};
-use egui_graphs::{Change, ChangeNode, Edge, Graph, GraphView, Node, SettingsInteraction};
+use crossbeam::channel::{unbounded, Receiver};
+use eframe::{
+    egui::{
+        Align, CentralPanel, CollapsingHeader, Color32, Context, Grid, Label, Layout, RichText,
+        ScrollArea, SidePanel, Slider, Vec2,
+    },
+    run_native, App, CreationContext,
+};
 use image;
 use image::GenericImageView;
-use notify::{
-    event::ModifyKind, Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
-};
-use petgraph::{
-    stable_graph::{NodeIndex, StableUnGraph},
-    visit::EdgeRef,
-    Undirected,
-};
-use rand::Rng;
-use std::io;
-use std::io::Write;
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use notify::{Error, Event, RecommendedWatcher, RecursiveMode, Watcher};
+
+use std::time::Duration;
 
 mod activation;
 mod error_func;
@@ -26,6 +18,10 @@ mod neuro;
 
 use activation::*;
 use neuro::*;
+
+struct LayerOptions {
+    neurons: usize,
+}
 
 pub struct NeuroApp {
     changes_receiver: Receiver<notify::Event>,
@@ -40,10 +36,7 @@ pub struct NeuroApp {
     watcher: RecommendedWatcher,
     watching: Option<String>,
     promise: Option<poll_promise::Promise<NeuroNetwork>>,
-}
-
-fn distance(a: Vec2, b: Vec2) -> f32 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+    toasts: egui_notify::Toasts,
 }
 
 impl NeuroApp {
@@ -76,6 +69,7 @@ impl NeuroApp {
             watcher: watcher,
             watching: None,
             promise: None,
+            toasts: egui_notify::Toasts::default(),
         };
         app
     }
@@ -102,7 +96,7 @@ fn get_file_data(file_path: String) -> Vec<f32> {
 }
 
 fn train() -> NeuroNetwork {
-    let train_len = 800;
+    let train_len = 100;
     let mut train_labels: Vec<u8> = mnist_read::read_labels("train-labels-idx1-ubyte");
     let mut train_data = mnist_read::read_data("train-images-idx3-ubyte")
         .chunks(784)
@@ -123,7 +117,7 @@ fn train() -> NeuroNetwork {
         })
         .collect::<Vec<_>>();
     let mut net = neuro::NeuroNetwork::new(vec![784, 32, 32, 16, 10])
-        .with_epoch(3000)
+        .with_epoch(200)
         .with_batch_size(10)
         .with_activation(ActivationFunc::Relu)
         .with_last_activation(ActivationFunc::Softmax);
@@ -134,7 +128,7 @@ fn train() -> NeuroNetwork {
 
 impl App for NeuroApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
-        egui::SidePanel::right("right_panel")
+        SidePanel::right("right_panel")
             .min_width(250.)
             .show(ctx, |ui| {
                 ScrollArea::vertical().show(ui, |ui| {
@@ -198,13 +192,25 @@ impl App for NeuroApp {
                             ui.horizontal(|ui| {
                                 if ui.button("Learn").clicked() {
                                     if self.promise.is_none() {
-                                        self.network = None;
-                                        self.promise = Some(
-                                            poll_promise::Promise::<NeuroNetwork>::spawn_thread(
-                                                "Neural network training",
-                                                move || train(),
-                                            ),
-                                        );
+                                        let path =
+                                            std::path::Path::new(&self.train_data_folder_path);
+                                        if path.exists() {
+                                            if path.is_dir() {
+                                                self.network = None;
+                                                self.promise = Some(poll_promise::Promise::<
+                                                    NeuroNetwork,
+                                                >::spawn_thread(
+                                                    "Neural network training",
+                                                    move || train(),
+                                                ));
+                                            } else if path.is_file() {
+                                                let file = std::fs::File::open(path).unwrap();
+                                                let reader = std::io::BufReader::new(file);
+                                                let net: NeuroNetworkJson =
+                                                    serde_json::from_reader(reader).unwrap();
+                                                self.network = Some(json_to_network(net));
+                                            }
+                                        }
                                     }
                                 }
                             });
@@ -222,16 +228,14 @@ impl App for NeuroApp {
                         });
                 });
             });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(Layout::left_to_right(Align::TOP), |ui| {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         ui.label("Input file");
                         ui.add_visible(
                             self.watching.is_none(),
-                            egui::Label::new(
-                                egui::RichText::new("Wrong path").color(egui::Color32::RED),
-                            ),
+                            Label::new(RichText::new("Wrong path").color(Color32::RED)),
                         )
                     });
                     if ui.text_edit_singleline(&mut self.input_file_path).changed() {
@@ -240,7 +244,6 @@ impl App for NeuroApp {
                             RecursiveMode::NonRecursive,
                         ) {
                             Ok(_) => {
-                                println!("heelo");
                                 match &self.watching {
                                     Some(path) => {
                                         println!("Unwatch: {}", path);
@@ -269,7 +272,7 @@ impl App for NeuroApp {
                     ui.text_edit_singleline(&mut self.train_data_folder_path);
                 });
                 ui.add_space(12.0);
-                egui::Grid::new("unique_id_2")
+                Grid::new("unique_id_2")
                     .spacing(Vec2::new(1., 1.))
                     .show(ui, |ui| {
                         for i in 0..8 {
@@ -279,18 +282,22 @@ impl App for NeuroApp {
                         }
                     });
             });
+            self.toasts.show(ctx);
         });
         self.handle_changes();
         self.promise = match self.promise.take() {
             Some(p) => match p.try_take() {
                 Ok(value) => {
+                    self.toasts
+                        .success("Training completed")
+                        .set_duration(Some(std::time::Duration::from_secs(2)));
                     self.network = Some(value);
                     None
                 }
                 Err(p) => Some(p),
             },
             None => None,
-        }
+        };
     }
 }
 

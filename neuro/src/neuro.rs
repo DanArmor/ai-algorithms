@@ -54,6 +54,15 @@ impl NeuroLayer {
             activation: Activation::new(activation),
         }
     }
+    pub fn neurons(&self) -> usize {
+        self.weights.len()
+    }
+    pub fn back_links(&self) -> usize {
+        self.weights[0].len()
+    }
+    pub fn activation_name(&self) -> String {
+        self.activation.name.clone()
+    }
     pub fn forward(&mut self, input: Vec<f32>) -> Vec<f32> {
         self.raw_input = input;
         self.input = self
@@ -169,7 +178,7 @@ fn json_to_layer(j: NeuroLayerJson) -> NeuroLayer {
     layer
 }
 
-fn json_to_network(j: NeuroNetworkJson) -> NeuroNetwork {
+pub fn json_to_network(j: NeuroNetworkJson) -> NeuroNetwork {
     let layers = j.layers.into_iter().map(|x| json_to_layer(x)).collect();
     NeuroNetwork {
         layers: layers,
