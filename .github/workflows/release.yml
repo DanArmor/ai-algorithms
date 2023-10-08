@@ -20,6 +20,7 @@ jobs:
           RUSTTARGET: ${{ matrix.target }}
           EXTRA_FILES: "README.md LICENSE"
           SRC_DIR: "sim-ann"
+          TOOLCHAIN_VERSION: "rustc 1.75.0-nightly"
   art_1_release:
     name: art_1_release ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -37,6 +38,7 @@ jobs:
           RUSTTARGET: ${{ matrix.target }}
           EXTRA_FILES: "README.md LICENSE"
           SRC_DIR: "art-1"
+          TOOLCHAIN_VERSION: "rustc 1.75.0-nightly"
   ant_release:
     name: ant_release ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -54,6 +56,7 @@ jobs:
           RUSTTARGET: ${{ matrix.target }}
           EXTRA_FILES: "README.md LICENSE"
           SRC_DIR: "ant"
+          TOOLCHAIN_VERSION: "rustc 1.75.0-nightly"
   neuro_release:
     name: neuro_release ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -71,6 +74,7 @@ jobs:
           RUSTTARGET: ${{ matrix.target }}
           EXTRA_FILES: "README.md LICENSE"
           SRC_DIR: "neuro"
+          TOOLCHAIN_VERSION: "rustc 1.75.0-nightly"
   genetic_release:
     name: genetic_release ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -89,3 +93,4 @@ jobs:
           PRE_BUILD: "genetic/prebuild.sh"
           EXTRA_FILES: "README.md LICENSE"
           SRC_DIR: "genetic"
+          TOOLCHAIN_VERSION: "rustc 1.75.0-nightly"
