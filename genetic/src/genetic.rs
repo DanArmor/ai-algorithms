@@ -262,7 +262,8 @@ pub fn solve<
         let old_wa_table = weighted_rand::builder::WalkerTableBuilder::new(
             &old.iter().map(|x| x.health() as u32).collect::<Vec<_>>(),
         )
-        .build().inverse();
+        .inverse()
+        .build();
         let mut new: Vec<ChromosomeType> = vec![];
         while new.len() != old.len() {
             let v = wa_table.next_rng(&mut rand::thread_rng());
@@ -287,7 +288,8 @@ pub fn solve<
         let new_wa_table = weighted_rand::builder::WalkerTableBuilder::new(
             &new.iter().map(|x| x.health() as u32).collect::<Vec<_>>(),
         )
-        .build().inverse();
+        .inverse()
+        .build();
         population.clear();
         for i in 0..population_size {
             population.push(new[pick_for_population(&population, &new, &new_wa_table)].clone());
