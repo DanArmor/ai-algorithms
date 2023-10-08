@@ -23,6 +23,6 @@ You can see two text inputs in central panel:
 
 `Drop` button just drops current neural network from app, so you can create new one.
 
-(in the example gif - types of vehicles)
+(in the example gif - classification of types of vehicles)
 
 ![neuro.gif](/forReadme/neuro.gif)
