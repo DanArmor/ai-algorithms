@@ -15,7 +15,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "Simulated annealing",
+        "ART-1",
         options,
         Box::new(|_cc| Box::<MyApp>::default()),
     )

@@ -161,7 +161,7 @@ impl MyApp {
                 .iter()
                 .map(|x| [x.index as f64, x.bad_decisions as f64])
                 .collect(),
-            "Количество принятых плохих решений",
+            "Amount of bad decisions",
         );
         self.plot.add_line(
             self.solution
@@ -169,7 +169,7 @@ impl MyApp {
                 .iter()
                 .map(|x| [x.index as f64, x.final_energy])
                 .collect(),
-            "Энергия лучшего решения",
+            "Energy of the best solution",
         );
     }
 }
@@ -182,7 +182,7 @@ impl Default for MyApp {
             temperature_alpha: "0.98".into(),
             queens_amount: "5".into(),
             steps_n: "10".into(),
-            plot: CustomPlot::new("plot_1", 800.0, 400.0, "Изменения параметров"),
+            plot: CustomPlot::new("plot_1", 800.0, 400.0, "Parameters change"),
             chess_white: egui_extras::RetainedImage::from_image_bytes(
                 "chess_white.png",
                 include_bytes!("chess_white.png"),
@@ -230,22 +230,22 @@ impl eframe::App for MyApp {
                     ui.vertical(|ui| {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                             ui.vertical(|ui| {
-                                ui.label("Минимальная температура");
+                                ui.label("Min temperature");
                                 ui.text_edit_singleline(&mut self.min_temperature_str);
 
-                                ui.label("Максимальная температура");
+                                ui.label("Max temperature");
                                 ui.text_edit_singleline(&mut self.max_temperature_str);
 
-                                ui.label("Коэффициент температуры");
+                                ui.label("Temperature coefficient");
                                 ui.text_edit_singleline(&mut self.temperature_alpha);
 
-                                ui.label("Количество ферзей");
+                                ui.label("Queens amount");
                                 ui.text_edit_singleline(&mut self.queens_amount);
 
-                                ui.label("Количество шагов при постоянном значении температуры");
+                                ui.label("Number of steps at constant temperature");
                                 ui.text_edit_singleline(&mut self.steps_n);
 
-                                if ui.button("Посчитать").clicked() {
+                                if ui.button("Calculate").clicked() {
                                     if self.promise.is_none() {
                                         self.plot.clear_lines();
                                         // Достаем параметры из интерфейса
@@ -310,7 +310,7 @@ impl eframe::App for MyApp {
 
                             ui.add(&mut self.plot);
                         });
-                        ui.heading("Шахматная доска");
+                        ui.heading("Chess board");
 
                         match &self.promise {
                             Some(p) => {
