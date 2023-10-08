@@ -26,3 +26,18 @@ You can see two text inputs in central panel:
 (in the example gif - classification of types of vehicles)
 
 ![neuro.gif](/forReadme/neuro.gif)
+
+You can transform all images in `IMG_DIR` into training sample with this python script:
+```python
+python import numpy as np
+from PIL import Image
+import cv2
+import os 
+IMG_DIR = ‘img’ 
+for img in os.listdir(IMG_DIR):
+    img_array = cv2.imread(os.path.join(IMG_DIR,img), cv2.IMREAD_GRAYSCALE) 
+    img_pil = Image.fromarray(img_array)
+    img_28x28 = np.array(img_pil.resize((28, 28), Image.LANCZOS)) 
+    data = Image.fromarray(img_28x28) 
+    data.save(img) 
+```
