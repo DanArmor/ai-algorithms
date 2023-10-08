@@ -74,6 +74,8 @@ impl NeuroApp {
                 .with_poll_interval(Duration::from_millis(500)),
         )
         .unwrap();
+        let mut layers_options = vec![LayerOptions { neurons: 1 }; 16];
+        layers_options[0] = 784;
         let mut app = Self {
             changes_receiver: changes_receiver,
             layers_activation: ActivationFunc::Sigmoid,
@@ -88,7 +90,7 @@ impl NeuroApp {
             watching: None,
             promise: None,
             toasts: egui_notify::Toasts::default(),
-            layers_options: vec![LayerOptions { neurons: 1 }; 16],
+            layers_options: layers_options,
             picked_layers: 2,
             solution: None,
             best_solution: None,
