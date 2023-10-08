@@ -29,7 +29,7 @@ Travel salesman problem solved with ant algorithm
 
 #### [Neural network](/neuro/)
 
-Image classification using a neural network.
+Image classification using a neural network. Works with 28x28 black-white images
 
 (in the example gif - types of vehicles)
 
