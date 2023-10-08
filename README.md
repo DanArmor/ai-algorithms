@@ -1,9 +1,42 @@
 # ai-algorithms
 
-AI algorithms visualization made with Rust
+AI algorithms visualizations made with Rust and [egui](https://github.com/emilk/egui).
 
 Contains:
-* [Simulated annealing](https://en.wikipedia.org/wiki/Simulated_annealing)
-* [ART-1](https://en.wikipedia.org/wiki/Adaptive_resonance_theory)
-* [Ant algorithm](https://en.wikipedia.org/wiki/Ant_colony_optimization_algorithms). 
-* [Neural network](??) to be added
+* Simulated annealing ([what it is](https://en.wikipedia.org/wiki/Simulated_annealing))
+* ART-1 ([what it is](https://en.wikipedia.org/wiki/Adaptive_resonance_theory))
+* Ant algorithm ([what it is](https://en.wikipedia.org/wiki/Ant_colony_optimization_algorithms)). 
+* Neural network ([what it is](https://en.wikipedia.org/wiki/Neural_network))
+* Genetic algorithm ([what it is](https://en.wikipedia.org/wiki/Genetic_algorithm))
+
+#### [Simulated annealing](/sim-ann/)
+
+N Queen Problem solved with simulated annealing
+
+![sim-ann.gif](/forReadme/sim-ann.gif)
+
+#### [ART-1](/art-1/)
+
+Clastering data with ART-1
+
+![art-1.gif](/forReadme/art-1.gif)
+
+#### [Ant algorithm](/ant/)
+
+Travel salesman problem solved with ant algorithm
+
+![ant.gif](/forReadme/ant.gif)
+
+#### [Neural network](/neuro/)
+
+Image classification using a neural network.
+
+(in the example gif - types of vehicles)
+
+![neuro.gif](/forReadme/neuro.gif)
+
+#### [Genetic algorithm]
+
+Travel salesman problem solved with genetic algorithm
+
+![genetic.gif](/forReadme/genetic.gif)

@@ -114,22 +114,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai-1"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "egui",
- "egui-plotter",
- "egui_extras",
- "env_logger",
- "image",
- "poll-promise",
- "rand",
- "random-string",
- "rfd",
-]
-
-[[package]]
 name = "android-activity"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2647,6 +2631,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8229b473baa5980ac72ef434c4415e70c4b5e71b423043adb4ba059f89c99a1"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "sim-ann"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "egui-plotter",
+ "egui_extras",
+ "env_logger",
+ "image",
+ "poll-promise",
+ "rand",
+ "random-string",
+ "rfd",
 ]
 
 [[package]]
