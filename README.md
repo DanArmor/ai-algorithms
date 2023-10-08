@@ -35,7 +35,7 @@ Image classification using a neural network.
 
 ![neuro.gif](/forReadme/neuro.gif)
 
-#### [Genetic algorithm]
+#### [Genetic algorithm](/genetic/)
 
 Travel salesman problem solved with genetic algorithm
 
