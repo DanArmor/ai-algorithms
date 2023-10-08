@@ -75,7 +75,8 @@ impl NeuroApp {
         )
         .unwrap();
         let mut layers_options = vec![LayerOptions { neurons: 1 }; 16];
-        layers_options[0] = 784;
+        layers_options[0].neurons = 784;
+        layers_options[1].neurons = 2;
         let mut app = Self {
             changes_receiver: changes_receiver,
             layers_activation: ActivationFunc::Sigmoid,
