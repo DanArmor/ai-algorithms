@@ -96,7 +96,7 @@ impl Ant {
                 .iter()
                 .map(|x| {
                     if x.probability.is_nan() {
-                        0.0
+                        0.01
                     } else {
                         x.probability
                     }
@@ -137,7 +137,7 @@ fn update_edges(
     p: f32,
 ) {
     for ant in ants {
-        let pheromones: f32 = q / ant.edges.iter().map(|x| x.edge_info.distance).sum::<f32>();
+        let pheromones: f32 = q / ant.distance;
         for edge in &ant.edges {
             let mut new_edge_data = edge.edge_info.clone();
             new_edge_data.pheromones = new_edge_data.pheromones * (1.0 - p) + pheromones;

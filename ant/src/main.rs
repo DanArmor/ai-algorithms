@@ -184,9 +184,9 @@ impl AntApp {
         ui.add(Slider::new(&mut self.ant_options.beta, 0. ..=400.).text("beta"));
         ui.add(Slider::new(&mut self.ant_options.p, 0. ..=1.).text("p"));
         ui.add(Slider::new(&mut self.ant_options.q, 1. ..=10000.).text("Q"));
-        ui.add(Slider::new(&mut self.ant_options.ant_amount, 1..=128).text("Ant amount"));
+        ui.add(Slider::new(&mut self.ant_options.ant_amount, 1..=512).text("Ant amount"));
         ui.add(
-            Slider::new(&mut self.ant_options.iterations_amount, 1..=128).text("Iterations amount"),
+            Slider::new(&mut self.ant_options.iterations_amount, 1..=512).text("Iterations amount"),
         );
     }
     fn ui_settings(&mut self, ui: &mut Ui) {
@@ -330,17 +330,8 @@ impl App for AntApp {
                                     .iter()
                                     .min_by(|x, y| {
                                         x.ants[x.best_ant_i as usize]
-                                            .edges
-                                            .iter()
-                                            .map(|x| x.edge_info.distance)
-                                            .sum::<f32>()
-                                            .total_cmp(
-                                                &y.ants[y.best_ant_i as usize]
-                                                    .edges
-                                                    .iter()
-                                                    .map(|x| x.edge_info.distance)
-                                                    .sum::<f32>(),
-                                            )
+                                            .distance
+                                            .total_cmp(&y.ants[y.best_ant_i as usize].distance)
                                     })
                                     .unwrap()
                                     .clone();
