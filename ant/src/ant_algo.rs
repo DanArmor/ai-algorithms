@@ -171,6 +171,16 @@ pub fn ant_algo(
     p: f32,
 ) -> Vec<IterationInfo> {
     let mut iterations: Vec<IterationInfo> = vec![];
+    let pick_start: Box<&dyn Fn(&Graph<(), EdgeInfo, petgraph::Undirected>, usize) -> NodeIndex> =
+        if ant_amount as usize == g.g.node_count() {
+            Box::new(&|g: &Graph<(), EdgeInfo, petgraph::Undirected>, x: usize| {
+                g.g.node_indices().nth(x).unwrap()
+            })
+        } else {
+            Box::new(&|g: &Graph<(), EdgeInfo, petgraph::Undirected>, x: usize| {
+                random_node_idx(g).unwrap()
+            })
+        };
     for iteration_i in 0..iterations_amount {
         let old_edges = g
             .edges_iter()
@@ -178,7 +188,7 @@ pub fn ant_algo(
             .collect::<Vec<_>>();
         let mut ants = vec![];
         for ant_i in 0..ant_amount {
-            let mut ant = Ant::new(random_node_idx(g).unwrap(), ant_i, iteration_i);
+            let mut ant = Ant::new(pick_start(g, ant_i as usize), ant_i, iteration_i);
             ant.travel_graph(g);
             ant.distance = ant.edges.iter().map(|x| x.edge_info.distance).sum::<f32>();
             ants.push(ant);
