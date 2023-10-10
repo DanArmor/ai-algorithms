@@ -137,7 +137,7 @@ fn update_edges(
     p: f32,
 ) {
     for ant in ants {
-        let pheromones: f32 = q / ant.distance;
+        let pheromones: f32 = q / ant.distance * p;
         for edge in &ant.edges {
             let mut new_edge_data = edge.edge_info.clone();
             new_edge_data.pheromones = new_edge_data.pheromones * (1.0 - p) + pheromones;
