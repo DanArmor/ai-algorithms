@@ -3,14 +3,15 @@ on:
     types: [created]
 
 jobs:
-  sim_ann_release:
-    name: sim_ann_release ${{ matrix.target }}
+  release_projects:
+    name: "${{matrix.project}}-release-${{matrix.target}}"
     permissions: write-all
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
+        project: [sim-ann, art-1, ant, neuro, genetic, kosko, hopfield]
     steps:
       - uses: actions/checkout@master
       - name: Compile and release
@@ -20,87 +21,6 @@ jobs:
         with:
           RUSTTARGET: ${{ matrix.target }}
           EXTRA_FILES: "README.md"
-          SRC_DIR: "sim-ann"
+          SRC_DIR: ${{ matrix.project }}
           TOOLCHAIN_VERSION: "nightly"
-          ARCHIVE_NAME: "sim-ann-release-${{matrix.target}}"
-  art_1_release:
-    name: art_1_release ${{ matrix.target }}
-    permissions: write-all
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
-    steps:
-      - uses: actions/checkout@master
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          RUSTTARGET: ${{ matrix.target }}
-          EXTRA_FILES: "README.md"
-          SRC_DIR: "art-1"
-          TOOLCHAIN_VERSION: "nightly"
-          ARCHIVE_NAME: "art-1-release-${{matrix.target}}"
-  ant_release:
-    name: ant_release ${{ matrix.target }}
-    permissions: write-all
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
-    steps:
-      - uses: actions/checkout@master
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          RUSTTARGET: ${{ matrix.target }}
-          EXTRA_FILES: "README.md"
-          SRC_DIR: "ant"
-          TOOLCHAIN_VERSION: "nightly"
-          ARCHIVE_NAME: "ant-release-${{matrix.target}}"
-  neuro_release:
-    name: neuro_release ${{ matrix.target }}
-    permissions: write-all
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
-    steps:
-      - uses: actions/checkout@master
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          RUSTTARGET: ${{ matrix.target }}
-          EXTRA_FILES: "README.md"
-          SRC_DIR: "neuro"
-          TOOLCHAIN_VERSION: "nightly"
-          ARCHIVE_NAME: "neuro-release-${{matrix.target}}"
-  genetic_release:
-    name: genetic_release ${{ matrix.target }}
-    permissions: write-all
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
-    steps:
-      - uses: actions/checkout@master
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          RUSTTARGET: ${{ matrix.target }}
-          PRE_BUILD: "genetic/prebuild.sh"
-          EXTRA_FILES: "README.md"
-          SRC_DIR: "genetic"
-          TOOLCHAIN_VERSION: "nightly"
-          ARCHIVE_NAME: "genetic-release-${{matrix.target}}"
+          ARCHIVE_NAME: "${{matrix.project}}-release-${{matrix.target}}"
