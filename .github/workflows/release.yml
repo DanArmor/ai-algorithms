@@ -20,7 +20,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           RUSTTARGET: ${{ matrix.target }}
-          EXTRA_FILES: "${{matrix.project}}/README.md forReadme/${{matrix.project}}.gif"
-          SRC_DIR: ${{ matrix.project }}
+          EXTRA_FILES: "${{matrix.project}}-src/README.md forReadme/${{matrix.project}}.gif"
+          SRC_DIR: "${{matrix.project}}-src"
           TOOLCHAIN_VERSION: "nightly"
           ARCHIVE_NAME: "${{matrix.project}}-release-${{matrix.target}}"

@@ -13,25 +13,25 @@ Contains:
 * Hopfield network ([what it is](https://en.wikipedia.org/wiki/Hopfield_network))
 * Bidirectional associative memory ([what it is](https://en.wikipedia.org/wiki/Bidirectional_associative_memory))
 
-#### [Simulated annealing](/sim-ann/)
+#### [Simulated annealing](/sim-ann-src/)
 
 N Queen Problem solved with simulated annealing
 
 ![sim-ann.gif](/forReadme/sim-ann.gif)
 
-#### [ART-1](/art-1/)
+#### [ART-1](/art-1-src/)
 
 Clastering data with ART-1
 
 ![art-1.gif](/forReadme/art-1.gif)
 
-#### [Ant algorithm](/ant/)
+#### [Ant algorithm](/ant-src/)
 
 Travel salesman problem solved with ant algorithm
 
 ![ant.gif](/forReadme/ant.gif)
 
-#### [Neural network](/neuro/)
+#### [Neural network](/neuro-src/)
 
 Image classification using a neural network. Works with 28x28 black-white images
 
@@ -39,18 +39,18 @@ Image classification using a neural network. Works with 28x28 black-white images
 
 ![neuro.gif](/forReadme/neuro.gif)
 
-#### [Genetic algorithm](/genetic/)
+#### [Genetic algorithm](/genetic-src/)
 
 Travel salesman problem solved with genetic algorithm
 
 ![genetic.gif](/forReadme/genetic.gif)
 
-#### [Hopfield network](/hopfield/)
+#### [Hopfield network](/hopfield-src/)
 
 Simple example of hopfield network
 ![hopfield](forReadme/hopfield.gif)
 
-#### [Biderictional associative memory](/kosko/)
+#### [Biderictional associative memory](/kosko-src/)
 
 Simple example of Biderectional associative memory
 ![kosko.gif](forReadme/kosko.gif)
