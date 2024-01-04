@@ -10,6 +10,8 @@ Contains:
 * Ant algorithm ([what it is](https://en.wikipedia.org/wiki/Ant_colony_optimization_algorithms)). 
 * Neural network ([what it is](https://en.wikipedia.org/wiki/Neural_network))
 * Genetic algorithm ([what it is](https://en.wikipedia.org/wiki/Genetic_algorithm))
+* Hopfield network ([what it is](https://en.wikipedia.org/wiki/Hopfield_network))
+* Bidirectional associative memory ([what it is](https://en.wikipedia.org/wiki/Bidirectional_associative_memory))
 
 #### [Simulated annealing](/sim-ann/)
 
@@ -42,3 +44,13 @@ Image classification using a neural network. Works with 28x28 black-white images
 Travel salesman problem solved with genetic algorithm
 
 ![genetic.gif](/forReadme/genetic.gif)
+
+#### [Hopfield network](/hopfield/)
+
+Simple example of hopfield network
+![hopfield](forReadme/hopfield.gif)
+
+#### [Biderictional associative memory](/kosko/)
+
+Simple example of Biderectional associative memory
+![kosko.gif](forReadme/kosko.gif)
