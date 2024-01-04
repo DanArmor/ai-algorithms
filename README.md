@@ -2,7 +2,7 @@
 
 AI algorithms visualizations made with Rust and [egui](https://github.com/emilk/egui).
 
-Executables can be downloaded from [Release page](https://github.com/DanArmor/ai-algorithms/releases).
+Executables for Windows and Linux can be downloaded from [Release page](https://github.com/DanArmor/ai-algorithms/releases).
 
 Contains:
 * Simulated annealing ([what it is](https://en.wikipedia.org/wiki/Simulated_annealing))
