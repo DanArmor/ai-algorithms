@@ -212,7 +212,7 @@ impl App for NeuroApp {
 fn main() {
     let native_options = eframe::NativeOptions::default();
     run_native(
-        "Ant-algo",
+        "Hopfield",
         native_options,
         Box::new(|cc| Box::new(NeuroApp::new(cc))),
     )

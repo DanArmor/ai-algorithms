@@ -528,7 +528,7 @@ impl App for GeneticApp {
 fn main() {
     let native_options = eframe::NativeOptions::default();
     run_native(
-        "Ant-algo",
+        "Genetic",
         native_options,
         Box::new(|cc| Box::new(GeneticApp::new(cc))),
     )
